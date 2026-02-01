@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 import requests
+import time
 
 
 class FieldSyncClient:
@@ -75,8 +76,7 @@ class FieldSyncClient:
         jobs = data.get("jobs") or []
         return jobs if isinstance(jobs, list) else []
 
-    def sync_jobs(self, jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # Use per-job GET upserts to avoid hosts blocking POST
+    def _sync_jobs_get(self, jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
         ok_count = 0
         last_error: Dict[str, Any] = {}
         for j in jobs:
@@ -105,11 +105,25 @@ class FieldSyncClient:
                 ok_count += 1
             else:
                 last_error = r
+            time.sleep(0.05)
         if ok_count > 0:
             return {"ok": True, "count": ok_count}
         if last_error:
             return last_error
         return {"ok": False, "error": "no_jobs_sent"}
+
+    def sync_jobs(self, jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not jobs:
+            return {"ok": True, "count": 0}
+        r = self._request("POST", "sync_jobs", json_body={"jobs": jobs})
+        if r.get("ok"):
+            return r
+        if r.get("error", "").startswith("http_") or r.get("error") in {
+            "request_failed",
+            "bad_json",
+        }:
+            return self._sync_jobs_get(jobs)
+        return r
 
     def mark_completed(
         self, *, job_key: str, completed: bool, qty: float | int | None, completed_at: str

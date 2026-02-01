@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List
 from datetime import date
+import time
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -43,6 +44,9 @@ class WorkSheetScreen(QWidget):
         self.store = store
         self.state_store = StateStore(store)
         self._sync_warned = False
+        self._last_sync_attempt = 0.0
+        self._min_sync_interval = 2.0
+        self._full_sync_interval = 300.0
 
         self.module_id = module_id
         self.sheet_name = sheet_name
@@ -132,6 +136,29 @@ class WorkSheetScreen(QWidget):
             return
 
         self.rows = load_work_list_sheet(work_list_path, self.sheet_name)
+        for r in self.rows:
+            k = row_key(self.module_id, self.sheet_name, r.wo)
+            rec = self.state_store.get(k)
+            if rec:
+                continue
+            self.state_store.upsert(
+                k,
+                {
+                    "module": self.module_id,
+                    "completed": False,
+                    "invoiced": False,
+                    "current_work": False,
+                    "unit": self.unit,
+                    "meta": {
+                        "sheet": self.sheet_name,
+                        "work_order": r.wo or "",
+                        "location": r.location,
+                        "call_date": r.call_date,
+                        "po": r.po or "",
+                    },
+                },
+            )
+            self.state_store.set_dirty(k, True)
         self._sync_with_server_async()
         self._populate()
 
@@ -266,6 +293,7 @@ class WorkSheetScreen(QWidget):
             current["module"] = self.module_id
             current.pop("completed_at", None)
             self.state_store.upsert(k, current)
+            self.state_store.set_dirty(k, True)
             self._sync_completion_async(k, False, 0, "")
             self._populate()
             return
@@ -303,6 +331,7 @@ class WorkSheetScreen(QWidget):
         current["meta"] = meta
 
         self.state_store.upsert(k, current)
+        self.state_store.set_dirty(k, True)
         self._sync_completion_async(k, True, float(qty), completed_at)
         self._populate()
 
@@ -332,6 +361,7 @@ class WorkSheetScreen(QWidget):
         rec["unit"] = self.unit
         rec["module"] = self.module_id
         self.state_store.upsert(k, rec)
+        self.state_store.set_dirty(k, True)
         self._populate()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
@@ -345,7 +375,8 @@ class WorkSheetScreen(QWidget):
         rec["current_work"] = item.checkState() == Qt.Checked
         rec["module"] = rec.get("module") or self.module_id
         self.state_store.upsert(k, rec)
-        self._sync_with_server_async()
+        self.state_store.set_dirty(k, True)
+        self._sync_dirty_async()
 
     def _get_sync_client(self) -> FieldSyncClient | None:
         settings = self.store.load_settings()
@@ -355,79 +386,138 @@ class WorkSheetScreen(QWidget):
             return None
         return FieldSyncClient(base, key)
 
+    def _full_sync_key(self) -> str:
+        return f"field_sync_last_full_{self.module_id}"
+
+    def _get_last_full_sync(self) -> float:
+        settings = self.store.load_settings()
+        try:
+            return float(settings.get(self._full_sync_key(), 0) or 0)
+        except Exception:
+            return 0.0
+
+    def _set_last_full_sync(self, ts: float) -> None:
+        settings = self.store.load_settings()
+        settings[self._full_sync_key()] = int(ts)
+        self.store.save_settings(settings)
+
+    def _can_sync_now(self) -> bool:
+        now = time.time()
+        if (now - self._last_sync_attempt) < self._min_sync_interval:
+            return False
+        self._last_sync_attempt = now
+        return True
+
+    def _build_payload(self, r, rec: dict) -> dict:
+        return {
+            "job_key": row_key(self.module_id, self.sheet_name, r.wo),
+            "module": self.module_id,
+            "job_type": self.sheet_name,
+            "sheet": self.sheet_name,
+            "item": r.location,
+            "work_order": r.wo,
+            "po": r.po,
+            "unit": self.unit,
+            "qty_default": None,
+            "completed": 1 if rec.get("completed") is True else 0,
+            "completed_at": rec.get("completed_at"),
+            "invoiced": 1 if rec.get("invoiced") is True else 0,
+            "invoiced_at": rec.get("invoiced_at"),
+            "qty": rec.get("qty"),
+            "current_work": 1 if rec.get("current_work") is True else 0,
+            "meta": {
+                "location": r.location,
+                "call_date": r.call_date,
+                "sheet": self.sheet_name,
+            },
+        }
+
     def _sync_with_server(self) -> None:
         client = self._get_sync_client()
         if not client:
             return
+        if not self._can_sync_now():
+            return
         try:
             self.sync_status.emit("Syncing...")
-            completed_jobs = client.list_jobs(module=self.module_id, completed=True)
-            for j in completed_jobs:
-                key = j.get("job_key") or ""
-                if not key:
-                    continue
-                rec = self.state_store.get(key) or {}
-                rec["completed"] = True
-                if j.get("invoiced") is not None:
-                    rec["invoiced"] = bool(int(j.get("invoiced")))
-                if j.get("invoiced_at"):
-                    rec["invoiced_at"] = j.get("invoiced_at")
-                if j.get("current_work") is not None:
-                    rec["current_work"] = bool(int(j.get("current_work")))
-                qty = j.get("qty")
-                if qty is not None:
-                    try:
-                        rec["qty"] = float(qty)
-                    except Exception:
-                        pass
-                rec["unit"] = self.unit
-                rec["module"] = self.module_id
-                if j.get("completed_at"):
-                    rec["completed_at"] = j.get("completed_at")
-                self.state_store.upsert(key, rec)
+            now = time.time()
+            full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
+
+            if full_sync_due:
+                completed_jobs = client.list_jobs(module=self.module_id, completed=True)
+                for j in completed_jobs:
+                    key = j.get("job_key") or ""
+                    if not key:
+                        continue
+                    rec = self.state_store.get(key) or {}
+                    if rec.get("_dirty"):
+                        continue
+                    rec["completed"] = True
+                    if j.get("invoiced") is not None:
+                        rec["invoiced"] = bool(int(j.get("invoiced")))
+                    if j.get("invoiced_at"):
+                        rec["invoiced_at"] = j.get("invoiced_at")
+                    if j.get("current_work") is not None:
+                        rec["current_work"] = bool(int(j.get("current_work")))
+                    qty = j.get("qty")
+                    if qty is not None:
+                        try:
+                            rec["qty"] = float(qty)
+                        except Exception:
+                            pass
+                    rec["unit"] = self.unit
+                    rec["module"] = self.module_id
+                    if j.get("completed_at"):
+                        rec["completed_at"] = j.get("completed_at")
+                    self.state_store.upsert(key, rec)
 
             jobs_payload = []
+            dirty_keys = set()
             for r in self.rows:
                 key = row_key(self.module_id, self.sheet_name, r.wo)
                 rec = self.state_store.get(key) or {}
-                jobs_payload.append(
-                    {
-                        "job_key": key,
-                        "module": self.module_id,
-                        "job_type": self.sheet_name,
-                        "sheet": self.sheet_name,
-                        "item": r.location,
-                        "work_order": r.wo,
-                        "po": r.po,
-                        "unit": self.unit,
-                        "qty_default": None,
-                        "completed": 1 if rec.get("completed") is True else 0,
-                        "completed_at": rec.get("completed_at"),
-                        "invoiced": 1 if rec.get("invoiced") is True else 0,
-                        "invoiced_at": rec.get("invoiced_at"),
-                        "qty": rec.get("qty"),
-                        "current_work": 1 if rec.get("current_work") is True else 0,
-                        "meta": {
-                            "location": r.location,
-                            "call_date": r.call_date,
-                            "sheet": self.sheet_name,
-                        },
-                    }
-                )
-            client.sync_jobs(jobs_payload)
+                if full_sync_due or rec.get("_dirty"):
+                    jobs_payload.append(self._build_payload(r, rec))
+                    if rec.get("_dirty"):
+                        dirty_keys.add(key)
+
+            if jobs_payload:
+                result = client.sync_jobs(jobs_payload)
+                if result.get("ok"):
+                    for k in dirty_keys:
+                        self.state_store.clear_dirty(k)
+                    if full_sync_due:
+                        self._set_last_full_sync(now)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
         except Exception:
             self.sync_status.emit("Sync failed")
 
     def _sync_completion(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
+        self._sync_dirty()
+
+    def _sync_dirty(self) -> None:
         client = self._get_sync_client()
         if not client:
             return
+        if not self._can_sync_now():
+            return
         try:
-            client.mark_completed(
-                job_key=key, completed=completed, qty=qty, completed_at=completed_at
-            )
+            jobs_payload = []
+            dirty_keys = set()
+            for r in self.rows:
+                key = row_key(self.module_id, self.sheet_name, r.wo)
+                rec = self.state_store.get(key) or {}
+                if rec.get("_dirty"):
+                    jobs_payload.append(self._build_payload(r, rec))
+                    dirty_keys.add(key)
+            if not jobs_payload:
+                return
+            self.sync_status.emit("Syncing...")
+            result = client.sync_jobs(jobs_payload)
+            if result.get("ok"):
+                for k in dirty_keys:
+                    self.state_store.clear_dirty(k)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
         except Exception:
@@ -443,6 +533,10 @@ class WorkSheetScreen(QWidget):
             args=(key, completed, qty, completed_at),
             daemon=True,
         )
+        t.start()
+
+    def _sync_dirty_async(self) -> None:
+        t = threading.Thread(target=self._sync_dirty, daemon=True)
         t.start()
 
     def _set_sync_status(self, text: str) -> None:

@@ -45,6 +45,30 @@ class StateStore:
         self._data[key] = record
         self.save()
 
+    def set_dirty(self, key: str, dirty: bool = True) -> None:
+        self._reload()
+        rec = self.get(key).copy()
+        if dirty:
+            rec["_dirty"] = True
+        else:
+            rec.pop("_dirty", None)
+            rec.pop("_dirty_at", None)
+        self._data[key] = rec
+        self.save()
+
+    def clear_dirty(self, key: str) -> None:
+        self.set_dirty(key, False)
+
+    def iter_dirty(self, *, module: str | None = None) -> Iterable[Tuple[str, Dict[str, Any]]]:
+        for k, v in self._data.items():
+            if not isinstance(v, dict):
+                continue
+            if not v.get("_dirty"):
+                continue
+            if module and v.get("module") != module:
+                continue
+            yield k, v
+
     def delete(self, key: str) -> None:
         self._reload()
         if key in self._data:

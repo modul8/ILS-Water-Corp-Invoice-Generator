@@ -3,6 +3,7 @@ from services.state_store import StateStore
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import time
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -45,6 +46,9 @@ class DrainSprayingScreen(QWidget):
 
         self.state_store = StateStore(self.store)
         self._sync_warned = False
+        self._last_sync_attempt = 0.0
+        self._min_sync_interval = 2.0
+        self._full_sync_interval = 300.0
 
         self.rows = []  # list of SprayRow-like objects
 
@@ -169,6 +173,7 @@ class DrainSprayingScreen(QWidget):
                             "po": getattr(r, "po", "") or "",
                         }
                     })
+                    self.state_store.set_dirty(k, True)
 
         else:
             self.rows = []
@@ -241,7 +246,8 @@ class DrainSprayingScreen(QWidget):
         rec.setdefault("meta", {})
         rec["current_work"] = item.checkState() == Qt.Checked
         self.state_store.upsert(k, rec)
-        self._sync_with_server_async()
+        self.state_store.set_dirty(k, True)
+        self._sync_dirty_async()
 
     def _filter_settings_key(self, name: str) -> str:
         return f"filters_drain_{name}"
@@ -336,7 +342,8 @@ class DrainSprayingScreen(QWidget):
         })
 
         self.state_store.upsert(k, existing)
-        self._sync_completion_async(k, existing["completed"], existing.get("qty", 0), completed_at)
+        self.state_store.set_dirty(k, True)
+        self._sync_dirty_async()
         self._populate()
 
     def _get_sync_client(self) -> FieldSyncClient | None:
@@ -347,104 +354,160 @@ class DrainSprayingScreen(QWidget):
             return None
         return FieldSyncClient(base, key)
 
+    def _full_sync_key(self) -> str:
+        return "field_sync_last_full_drain"
+
+    def _get_last_full_sync(self) -> float:
+        settings = self.store.load_settings()
+        try:
+            return float(settings.get(self._full_sync_key(), 0) or 0)
+        except Exception:
+            return 0.0
+
+    def _set_last_full_sync(self, ts: float) -> None:
+        settings = self.store.load_settings()
+        settings[self._full_sync_key()] = int(ts)
+        self.store.save_settings(settings)
+
+    def _can_sync_now(self) -> bool:
+        now = time.time()
+        if (now - self._last_sync_attempt) < self._min_sync_interval:
+            return False
+        self._last_sync_attempt = now
+        return True
+
+    def _build_payload(self, r, rec: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "job_key": row_key(r),
+            "module": "drain",
+            "job_type": "Drain spraying",
+            "sheet": getattr(r, "sheet", ""),
+            "item": getattr(r, "drain", ""),
+            "work_order": getattr(r, "work_order", "") or "",
+            "po": getattr(r, "po", "") or "",
+            "unit": "km",
+            "qty_default": float(getattr(r, "qty_km", 0.0)),
+            "completed": 1 if rec.get("completed") is True else 0,
+            "completed_at": rec.get("completed_at"),
+            "invoiced": 1 if rec.get("invoiced") is True else 0,
+            "invoiced_at": rec.get("invoiced_at"),
+            "qty": rec.get("qty"),
+            "current_work": 1 if rec.get("current_work") is True else 0,
+            "meta": {
+                "sheet": getattr(r, "sheet", ""),
+                "catchment": getattr(r, "catchment", "") or "",
+                "drain": getattr(r, "drain", ""),
+                "qty_km": float(getattr(r, "qty_km", 0.0)),
+                "work_order": getattr(r, "work_order", "") or "",
+                "po": getattr(r, "po", "") or "",
+            },
+        }
+
     def _sync_with_server(self) -> None:
         client = self._get_sync_client()
         if not client:
             return
+        if not self._can_sync_now():
+            return
         try:
             self.sync_status.emit("Syncing...")
-            completed_jobs = client.list_jobs(module="drain", completed=True)
-            for j in completed_jobs:
-                job_key = j.get("job_key") or ""
-                if not job_key:
-                    continue
-                rec = self.state_store.get(job_key) or {}
-                rec["completed"] = True
-                if j.get("invoiced") is not None:
-                    server_invoiced = bool(int(j.get("invoiced")))
-                    if server_invoiced or not bool(rec.get("invoiced")):
-                        rec["invoiced"] = server_invoiced
-                if j.get("current_work") is not None:
-                    rec["current_work"] = bool(int(j.get("current_work")))
-                if j.get("invoiced_at"):
-                    rec["invoiced_at"] = j.get("invoiced_at")
-                qty = j.get("qty")
-                if qty is not None:
-                    try:
-                        rec["qty"] = float(qty)
-                    except Exception:
-                        pass
-                rec["unit"] = "km"
-                rec["module"] = "drain"
-                if j.get("completed_at"):
-                    rec["completed_at"] = j.get("completed_at")
-                meta = rec.get("meta") or {}
-                raw_meta = j.get("meta")
-                if isinstance(raw_meta, str) and raw_meta.strip():
-                    try:
-                        parsed = json.loads(raw_meta)
-                        if isinstance(parsed, dict):
-                            meta.update(parsed)
-                    except Exception:
-                        pass
-                meta.update(
-                    {
-                        "sheet": j.get("sheet") or meta.get("sheet") or "",
-                        "catchment": meta.get("catchment") or "",
-                        "drain": j.get("item") or meta.get("drain") or "",
-                        "work_order": j.get("work_order") or meta.get("work_order") or "",
-                        "po": j.get("po") or meta.get("po") or "",
-                        "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or 0,
-                    }
-                )
-                rec["meta"] = meta
-                self.state_store.upsert(job_key, rec)
+            now = time.time()
+            full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
+
+            if full_sync_due:
+                completed_jobs = client.list_jobs(module="drain", completed=True)
+                for j in completed_jobs:
+                    job_key = j.get("job_key") or ""
+                    if not job_key:
+                        continue
+                    rec = self.state_store.get(job_key) or {}
+                    if rec.get("_dirty"):
+                        continue
+                    rec["completed"] = True
+                    if j.get("invoiced") is not None:
+                        server_invoiced = bool(int(j.get("invoiced")))
+                        if server_invoiced or not bool(rec.get("invoiced")):
+                            rec["invoiced"] = server_invoiced
+                    if j.get("current_work") is not None:
+                        rec["current_work"] = bool(int(j.get("current_work")))
+                    if j.get("invoiced_at"):
+                        rec["invoiced_at"] = j.get("invoiced_at")
+                    qty = j.get("qty")
+                    if qty is not None:
+                        try:
+                            rec["qty"] = float(qty)
+                        except Exception:
+                            pass
+                    rec["unit"] = "km"
+                    rec["module"] = "drain"
+                    if j.get("completed_at"):
+                        rec["completed_at"] = j.get("completed_at")
+                    meta = rec.get("meta") or {}
+                    raw_meta = j.get("meta")
+                    if isinstance(raw_meta, str) and raw_meta.strip():
+                        try:
+                            parsed = json.loads(raw_meta)
+                            if isinstance(parsed, dict):
+                                meta.update(parsed)
+                        except Exception:
+                            pass
+                    meta.update(
+                        {
+                            "sheet": j.get("sheet") or meta.get("sheet") or "",
+                            "catchment": meta.get("catchment") or "",
+                            "drain": j.get("item") or meta.get("drain") or "",
+                            "work_order": j.get("work_order") or meta.get("work_order") or "",
+                            "po": j.get("po") or meta.get("po") or "",
+                            "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or 0,
+                        }
+                    )
+                    rec["meta"] = meta
+                    self.state_store.upsert(job_key, rec)
 
             jobs_payload = []
+            dirty_keys = set()
             for r in self.rows:
                 key = row_key(r)
                 rec = self.state_store.get(key) or {}
-                jobs_payload.append(
-                    {
-                        "job_key": key,
-                        "module": "drain",
-                        "job_type": "Drain spraying",
-                        "sheet": getattr(r, "sheet", ""),
-                        "item": getattr(r, "drain", ""),
-                        "work_order": getattr(r, "work_order", "") or "",
-                        "po": getattr(r, "po", "") or "",
-                        "unit": "km",
-                        "qty_default": float(getattr(r, "qty_km", 0.0)),
-                        "completed": 1 if rec.get("completed") is True else 0,
-                        "completed_at": rec.get("completed_at"),
-                        "invoiced": 1 if rec.get("invoiced") is True else 0,
-                        "invoiced_at": rec.get("invoiced_at"),
-                        "qty": rec.get("qty"),
-                        "current_work": 1 if rec.get("current_work") is True else 0,
-                        "meta": {
-                            "sheet": getattr(r, "sheet", ""),
-                            "catchment": getattr(r, "catchment", "") or "",
-                            "drain": getattr(r, "drain", ""),
-                            "qty_km": float(getattr(r, "qty_km", 0.0)),
-                            "work_order": getattr(r, "work_order", "") or "",
-                            "po": getattr(r, "po", "") or "",
-                        },
-                    }
-                )
-            client.sync_jobs(jobs_payload)
+                if full_sync_due or rec.get("_dirty"):
+                    jobs_payload.append(self._build_payload(r, rec))
+                    if rec.get("_dirty"):
+                        dirty_keys.add(key)
+
+            if jobs_payload:
+                result = client.sync_jobs(jobs_payload)
+                if result.get("ok"):
+                    for k in dirty_keys:
+                        self.state_store.clear_dirty(k)
+                    if full_sync_due:
+                        self._set_last_full_sync(now)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
         except Exception:
             self.sync_status.emit("Sync failed")
 
-    def _sync_completion(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
+    def _sync_dirty(self) -> None:
         client = self._get_sync_client()
         if not client:
             return
+        if not self._can_sync_now():
+            return
         try:
-            client.mark_completed(
-                job_key=key, completed=completed, qty=qty, completed_at=completed_at
-            )
+            jobs_payload = []
+            dirty_keys = set()
+            for r in self.rows:
+                key = row_key(r)
+                rec = self.state_store.get(key) or {}
+                if rec.get("_dirty"):
+                    jobs_payload.append(self._build_payload(r, rec))
+                    dirty_keys.add(key)
+            if not jobs_payload:
+                return
+            self.sync_status.emit("Syncing...")
+            result = client.sync_jobs(jobs_payload)
+            if result.get("ok"):
+                for k in dirty_keys:
+                    self.state_store.clear_dirty(k)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
         except Exception:
@@ -454,12 +517,8 @@ class DrainSprayingScreen(QWidget):
         t = threading.Thread(target=self._sync_with_server, daemon=True)
         t.start()
 
-    def _sync_completion_async(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
-        t = threading.Thread(
-            target=self._sync_completion,
-            args=(key, completed, qty, completed_at),
-            daemon=True,
-        )
+    def _sync_dirty_async(self) -> None:
+        t = threading.Thread(target=self._sync_dirty, daemon=True)
         t.start()
 
     def _set_sync_status(self, text: str) -> None:

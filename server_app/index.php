@@ -101,6 +101,7 @@ if ($ui_password !== "") {
       </select>
       <button onclick="loadJobs()">Refresh</button>
     </div>
+    <div id="error" class="card" style="display:none; background:#ffe4e6; color:#9f1239;"></div>
     <div id="list"></div>
   </div>
 
@@ -125,19 +126,45 @@ function unitSuffix(unit) {
 async function apiGet(params) {
   const url = new URL(API_URL, window.location.href);
   Object.keys(params).forEach(k => url.searchParams.set(k, params[k]));
-  const res = await fetch(url, { headers: { "X-API-KEY": API_KEY }});
-  return res.json();
+  try {
+    const res = await fetch(url, { headers: { "X-API-KEY": API_KEY }});
+    if (!res.ok) {
+      return { ok: false, error: `http_${res.status}` };
+    }
+    return await res.json();
+  } catch (err) {
+    return { ok: false, error: "network_error" };
+  }
 }
 
 async function apiPost(action, body) {
   const url = new URL(API_URL, window.location.href);
   url.searchParams.set("action", action);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "X-API-KEY": API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify(body || {})
-  });
-  return res.json();
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "X-API-KEY": API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    });
+    if (!res.ok) {
+      return { ok: false, error: `http_${res.status}` };
+    }
+    return await res.json();
+  } catch (err) {
+    return { ok: false, error: "network_error" };
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById("error");
+  if (!el) return;
+  if (!msg) {
+    el.style.display = "none";
+    el.textContent = "";
+    return;
+  }
+  el.textContent = msg;
+  el.style.display = "block";
 }
 
 async function loadJobs() {
@@ -147,6 +174,11 @@ async function loadJobs() {
   const isCurrent = module === "current";
   const moduleParam = isCurrent ? "" : module;
   const data = await apiGet({ action: "list", q, module: moduleParam, completed, limit: "500" });
+  if (!data.ok) {
+    showError("API error loading jobs. Check server connection or API key.");
+    return;
+  }
+  showError("");
   const list = document.getElementById("list");
   list.innerHTML = "";
   if (!data.ok || !data.jobs || data.jobs.length === 0) {
@@ -161,32 +193,35 @@ async function loadJobs() {
     list.innerHTML = "<div class='card'>No jobs found.</div>";
     return;
   }
-  jobs.forEach(j => {
-    let qtyVal = j.qty || j.qty_default || "";
-    const unit = (j.unit || "").toLowerCase();
-    const suffix = unitSuffix(unit);
-    const html = `
+    jobs.forEach(j => {
+      let qtyVal = j.qty || j.qty_default || "";
+      const unit = (j.unit || "").toLowerCase();
+      const suffix = unitSuffix(unit);
+      const isCompleted = Number(j.completed || 0) === 1;
+      const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
+      const html = `
       <div class="card">
         <div class="title">${j.item || ""} <span class="badge">${suffix}</span></div>
         <div class="module">${jobTypeLabel(j.module)}</div>
         <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"}</div>
         <div class="row">
           <input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}">
-          <button onclick="markCompleted('${j.job_key}')">Mark Completed</button>
+          <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
         </div>
       </div>
     `;
-    list.insertAdjacentHTML("beforeend", html);
-  });
+      list.insertAdjacentHTML("beforeend", html);
+    });
 }
 
-async function markCompleted(jobKey) {
+async function markCompleted(jobKey, completed) {
   const qtyEl = document.getElementById(`qty-${jobKey}`);
   const qty = qtyEl ? qtyEl.value : "";
-  const resp = await apiPost("complete", { job_key: jobKey, completed: 1, qty: qty });
+  const resp = await apiPost("complete", { job_key: jobKey, completed: completed, qty: qty });
   if (!resp.ok) {
-    alert("Failed to update job.");
+    showError("API error updating job. Check server connection or API key.");
   } else {
+    showError("");
     loadJobs();
   }
 }
