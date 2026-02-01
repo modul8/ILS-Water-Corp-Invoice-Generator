@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+.venv/
+venv/
+venv-build/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Build outputs
+build/
+dist/
+# Node/JS
+node_modules/
+# Editor/IDE
+.vscode/
+.idea/
+# OS
+Thumbs.db
+.DS_Store
+# Logs
+*.log

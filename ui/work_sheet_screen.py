@@ -1,0 +1,449 @@
+from __future__ import annotations
+
+from typing import List
+from datetime import date
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QMessageBox,
+    QInputDialog,
+    QAbstractItemView,
+)
+
+from services.settings_store import SettingsStore
+from services.field_sync import FieldSyncClient
+import threading
+from services.state_store import StateStore
+from data.data_loader import load_work_list_sheet, WorkListRow
+
+
+def row_key(module_id: str, sheet_name: str, wo: str) -> str:
+    return f"{module_id}:{sheet_name}:{wo}"
+
+
+class WorkSheetScreen(QWidget):
+    """
+    Generic screen for Work List sheets.
+    Qty is entered when marking a job as completed.
+    """
+
+    sync_status = Signal(str)
+
+    def __init__(
+        self, store: SettingsStore, *, module_id: str, sheet_name: str, unit: str
+    ) -> None:
+        super().__init__()
+        self.store = store
+        self.state_store = StateStore(store)
+        self._sync_warned = False
+
+        self.module_id = module_id
+        self.sheet_name = sheet_name
+        self.unit = unit
+
+        self.rows: List[WorkListRow] = []
+
+        root = QVBoxLayout(self)
+
+        header = QHBoxLayout()
+        title = QLabel(sheet_name)
+        title.setStyleSheet("font-size: 20px; font-weight: 800;")
+        header.addWidget(title)
+        header.addStretch(1)
+
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.clicked.connect(self.refresh)
+        header.addWidget(btn_refresh)
+
+        self.btn_hide_completed = QPushButton("Hide Completed")
+        self.btn_hide_completed.setCheckable(True)
+        self.btn_hide_completed.toggled.connect(self._on_filter_toggle)
+        header.addWidget(self.btn_hide_completed)
+
+        self.btn_hide_missing = QPushButton("Hide Missing PO/WO")
+        self.btn_hide_missing.setCheckable(True)
+        self.btn_hide_missing.toggled.connect(self._on_filter_toggle)
+        header.addWidget(self.btn_hide_missing)
+
+        root.addLayout(header)
+
+        self.table = QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "WO",
+                "Location",
+                "Call Date",
+                "Qty",
+                "Unit",
+                "Completed",
+                "Invoiced",
+                "Current",
+                "Key",
+            ]
+        )
+        self.table.setColumnHidden(8, True)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+
+        self.table.itemChanged.connect(self._on_item_changed)
+        self.table.cellClicked.connect(self._on_click)
+        self.table.cellDoubleClicked.connect(self._on_double_click)
+
+        root.addWidget(self.table, 1)
+
+        self._load_filter_settings()
+        self._update_filter_labels()
+
+        hint = QLabel(
+            "Click Completed to mark job done (enter Qty). Click Qty column to edit."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color:#e0e0e0;")
+        root.addWidget(hint)
+
+        self.sync_label = QLabel("Sync: idle")
+        self.sync_label.setStyleSheet("color:#888; font-size: 12px;")
+        root.addWidget(self.sync_label)
+
+        self.sync_status.connect(self._set_sync_status)
+
+        self.refresh()
+
+    def reload_from_settings(self) -> None:
+        self.refresh()
+
+    def refresh(self) -> None:
+        self.state_store = StateStore(self.store)
+
+        work_list_path = (
+            self.store.load_settings().get("work_list_path") or ""
+        ).strip()
+        if not work_list_path:
+            self.table.setRowCount(0)
+            return
+
+        self.rows = load_work_list_sheet(work_list_path, self.sheet_name)
+        self._sync_with_server_async()
+        self._populate()
+
+    def _populate(self) -> None:
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+
+        hide_completed = self.btn_hide_completed.isChecked()
+        hide_missing = self.btn_hide_missing.isChecked()
+
+        for r in self.rows:
+            k = row_key(self.module_id, self.sheet_name, r.wo)
+            rec = self.state_store.get(k) or {}
+            completed = bool(rec.get("completed", False))
+            invoiced = bool(rec.get("invoiced", False))
+            qty = rec.get("qty", "")
+            current_work = bool(rec.get("current_work", False))
+            wo = r.wo or ""
+            po = r.po or ""
+
+            if hide_completed and completed:
+                continue
+            if hide_missing and not wo and not po:
+                continue
+
+            qty_disp = ""
+            try:
+                if qty not in ("", None):
+                    qty_disp = f"{float(qty):.2f}".rstrip("0").rstrip(".")
+            except Exception:
+                qty_disp = ""
+
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+
+            values = [
+                wo,
+                r.location,
+                r.call_date,
+                qty_disp,
+                self.unit,
+                "YES" if completed else "NO",
+                "YES" if invoiced else "NO",
+                "",
+                k,
+            ]
+
+            for c, v in enumerate(values):
+                item = QTableWidgetItem(str(v))
+                if c == 5 and completed:
+                    item.setForeground(Qt.green)
+                if c == 6 and invoiced:
+                    item.setForeground(Qt.cyan)
+                if c in (5, 6, 7):
+                    item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, c, item)
+
+            current_item = QTableWidgetItem()
+            current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            current_item.setCheckState(Qt.Checked if current_work else Qt.Unchecked)
+            current_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 7, current_item)
+
+        self.table.resizeColumnsToContents()
+        self.table.blockSignals(False)
+
+    def _filter_settings_key(self, name: str) -> str:
+        return f"filters_{self.module_id}_{name}"
+
+    def _load_filter_settings(self) -> None:
+        settings = self.store.load_settings()
+        self.btn_hide_completed.setChecked(
+            bool(settings.get(self._filter_settings_key("hide_completed"), False))
+        )
+        self.btn_hide_missing.setChecked(
+            bool(settings.get(self._filter_settings_key("hide_missing"), False))
+        )
+
+    def _save_filter_settings(self) -> None:
+        settings = self.store.load_settings()
+        settings[self._filter_settings_key("hide_completed")] = self.btn_hide_completed.isChecked()
+        settings[self._filter_settings_key("hide_missing")] = self.btn_hide_missing.isChecked()
+        self.store.save_settings(settings)
+
+    def _update_filter_labels(self) -> None:
+        if self.btn_hide_completed.isChecked():
+            self.btn_hide_completed.setText("Show Completed")
+        else:
+            self.btn_hide_completed.setText("Hide Completed")
+
+        if self.btn_hide_missing.isChecked():
+            self.btn_hide_missing.setText("Show Missing PO/WO")
+        else:
+            self.btn_hide_missing.setText("Hide Missing PO/WO")
+
+    def _apply_filters(self) -> None:
+        self._populate()
+
+    def _on_filter_toggle(self) -> None:
+        self._update_filter_labels()
+        self._save_filter_settings()
+        self._apply_filters()
+
+    def _on_click(self, row: int, col: int) -> None:
+        if col == 3:
+            self._edit_qty(row)
+            return
+
+    def _on_double_click(self, row: int, col: int) -> None:
+        if col == 5:
+            self._toggle_completed(row)
+            return
+
+    def _toggle_completed(self, row: int) -> None:
+        k = self.table.item(row, 8).text()
+        current = self.state_store.get(k) or {}
+        completed_now = bool(current.get("completed", False))
+
+        if completed_now:
+            confirm = QMessageBox.question(
+                self,
+                "Un-complete job?",
+                "This job is currently marked Completed. Do you want to mark it as NOT completed?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if confirm != QMessageBox.Yes:
+                return
+            current["completed"] = False
+            current["qty"] = 0
+            current["unit"] = self.unit
+            current["module"] = self.module_id
+            current.pop("completed_at", None)
+            self.state_store.upsert(k, current)
+            self._sync_completion_async(k, False, 0, "")
+            self._populate()
+            return
+
+        default_qty = 1.0 if self.unit == "each" else 0.0
+        qty, ok = QInputDialog.getDouble(
+            self,
+            "Enter quantity",
+            f"Enter qty ({self.unit}):",
+            default_qty,
+            0.0,
+            1000000.0,
+            2,
+        )
+        if not ok or qty <= 0:
+            return
+
+        current["completed"] = True
+        current["qty"] = float(qty)
+        current["unit"] = self.unit
+        current["module"] = self.module_id
+        completed_at = date.today().isoformat()
+        current["completed_at"] = completed_at
+
+        meta = current.get("meta") or {}
+        meta.update(
+            {
+                "sheet": self.sheet_name,
+                "work_order": self.table.item(row, 0).text(),
+                "location": self.table.item(row, 1).text(),
+                "call_date": self.table.item(row, 2).text(),
+                "po": self.rows[row].po if row < len(self.rows) else "",
+            }
+        )
+        current["meta"] = meta
+
+        self.state_store.upsert(k, current)
+        self._sync_completion_async(k, True, float(qty), completed_at)
+        self._populate()
+
+    def _edit_qty(self, row: int) -> None:
+        k = self.table.item(row, 8).text()
+        rec = self.state_store.get(k) or {}
+        if not bool(rec.get("completed", False)):
+            QMessageBox.information(
+                self, "Not completed", "Mark the job completed first."
+            )
+            return
+
+        current_qty = float(rec.get("qty", 0) or 0)
+        qty, ok = QInputDialog.getDouble(
+            self,
+            "Edit quantity",
+            f"Qty ({self.unit}):",
+            current_qty,
+            0.0,
+            1000000.0,
+            2,
+        )
+        if not ok or qty <= 0:
+            return
+
+        rec["qty"] = float(qty)
+        rec["unit"] = self.unit
+        rec["module"] = self.module_id
+        self.state_store.upsert(k, rec)
+        self._populate()
+
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() != 7:
+            return
+        key_item = self.table.item(item.row(), 8)
+        if not key_item:
+            return
+        k = key_item.text()
+        rec = self.state_store.get(k) or {}
+        rec["current_work"] = item.checkState() == Qt.Checked
+        rec["module"] = rec.get("module") or self.module_id
+        self.state_store.upsert(k, rec)
+        self._sync_with_server_async()
+
+    def _get_sync_client(self) -> FieldSyncClient | None:
+        settings = self.store.load_settings()
+        base = (settings.get("field_api_base") or "").strip()
+        key = (settings.get("field_api_key") or "").strip()
+        if not base or not key:
+            return None
+        return FieldSyncClient(base, key)
+
+    def _sync_with_server(self) -> None:
+        client = self._get_sync_client()
+        if not client:
+            return
+        try:
+            self.sync_status.emit("Syncing...")
+            completed_jobs = client.list_jobs(module=self.module_id, completed=True)
+            for j in completed_jobs:
+                key = j.get("job_key") or ""
+                if not key:
+                    continue
+                rec = self.state_store.get(key) or {}
+                rec["completed"] = True
+                if j.get("invoiced") is not None:
+                    rec["invoiced"] = bool(int(j.get("invoiced")))
+                if j.get("invoiced_at"):
+                    rec["invoiced_at"] = j.get("invoiced_at")
+                if j.get("current_work") is not None:
+                    rec["current_work"] = bool(int(j.get("current_work")))
+                qty = j.get("qty")
+                if qty is not None:
+                    try:
+                        rec["qty"] = float(qty)
+                    except Exception:
+                        pass
+                rec["unit"] = self.unit
+                rec["module"] = self.module_id
+                if j.get("completed_at"):
+                    rec["completed_at"] = j.get("completed_at")
+                self.state_store.upsert(key, rec)
+
+            jobs_payload = []
+            for r in self.rows:
+                key = row_key(self.module_id, self.sheet_name, r.wo)
+                rec = self.state_store.get(key) or {}
+                jobs_payload.append(
+                    {
+                        "job_key": key,
+                        "module": self.module_id,
+                        "job_type": self.sheet_name,
+                        "sheet": self.sheet_name,
+                        "item": r.location,
+                        "work_order": r.wo,
+                        "po": r.po,
+                        "unit": self.unit,
+                        "qty_default": None,
+                        "completed": 1 if rec.get("completed") is True else 0,
+                        "completed_at": rec.get("completed_at"),
+                        "invoiced": 1 if rec.get("invoiced") is True else 0,
+                        "invoiced_at": rec.get("invoiced_at"),
+                        "qty": rec.get("qty"),
+                        "current_work": 1 if rec.get("current_work") is True else 0,
+                        "meta": {
+                            "location": r.location,
+                            "call_date": r.call_date,
+                            "sheet": self.sheet_name,
+                        },
+                    }
+                )
+            client.sync_jobs(jobs_payload)
+            from datetime import datetime
+            self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
+        except Exception:
+            self.sync_status.emit("Sync failed")
+
+    def _sync_completion(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
+        client = self._get_sync_client()
+        if not client:
+            return
+        try:
+            client.mark_completed(
+                job_key=key, completed=completed, qty=qty, completed_at=completed_at
+            )
+            from datetime import datetime
+            self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
+        except Exception:
+            self.sync_status.emit("Sync failed")
+
+    def _sync_with_server_async(self) -> None:
+        t = threading.Thread(target=self._sync_with_server, daemon=True)
+        t.start()
+
+    def _sync_completion_async(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
+        t = threading.Thread(
+            target=self._sync_completion,
+            args=(key, completed, qty, completed_at),
+            daemon=True,
+        )
+        t.start()
+
+    def _set_sync_status(self, text: str) -> None:
+        self.sync_label.setText(f"Sync: {text}")
