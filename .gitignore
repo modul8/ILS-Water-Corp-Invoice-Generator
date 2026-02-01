@@ -23,3 +23,5 @@ Thumbs.db
 .DS_Store
 # Logs
 *.log
+# App secrets
+server_app/config.php
