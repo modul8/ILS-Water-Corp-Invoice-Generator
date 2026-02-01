@@ -125,6 +125,7 @@ function unitSuffix(unit) {
 
 async function apiGet(params) {
   const url = new URL(API_URL, window.location.href);
+  url.searchParams.set("key", API_KEY);
   Object.keys(params).forEach(k => url.searchParams.set(k, params[k]));
   try {
     const res = await fetch(url, { headers: { "X-API-KEY": API_KEY }});
@@ -140,6 +141,7 @@ async function apiGet(params) {
 async function apiPost(action, body) {
   const url = new URL(API_URL, window.location.href);
   url.searchParams.set("action", action);
+  url.searchParams.set("key", API_KEY);
   try {
     const res = await fetch(url, {
       method: "POST",
