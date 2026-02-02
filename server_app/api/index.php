@@ -58,6 +58,12 @@ function form_or_json() {
     return json_body();
 }
 
+function norm_date($value) {
+    if ($value === null) return null;
+    if (is_string($value) && trim($value) === "") return null;
+    return $value;
+}
+
 $action = isset($_GET["action"]) ? $_GET["action"] : "";
 $method = $_SERVER["REQUEST_METHOD"];
 
@@ -158,9 +164,9 @@ if ($action === "sync_jobs" && $method === "POST") {
                 ":unit" => $j["unit"] ?? "",
                 ":qty_default" => isset($j["qty_default"]) ? $j["qty_default"] : null,
                 ":completed" => isset($j["completed"]) ? (int)$j["completed"] : 0,
-                ":completed_at" => $j["completed_at"] ?? null,
+                ":completed_at" => norm_date($j["completed_at"] ?? null),
                 ":invoiced" => isset($j["invoiced"]) ? (int)$j["invoiced"] : 0,
-                ":invoiced_at" => $j["invoiced_at"] ?? null,
+                ":invoiced_at" => norm_date($j["invoiced_at"] ?? null),
                 ":qty" => isset($j["qty"]) ? $j["qty"] : null,
                 ":current_work" => isset($j["current_work"]) ? (int)$j["current_work"] : 0,
                 ":meta" => isset($j["meta"]) ? json_encode($j["meta"]) : null,
@@ -239,9 +245,9 @@ if ($action === "upsert" && $method === "GET") {
         ":unit" => $_GET["unit"] ?? "",
         ":qty_default" => isset($_GET["qty_default"]) ? $_GET["qty_default"] : null,
         ":completed" => isset($_GET["completed"]) ? (int)$_GET["completed"] : 0,
-        ":completed_at" => $_GET["completed_at"] ?? null,
+        ":completed_at" => norm_date($_GET["completed_at"] ?? null),
         ":invoiced" => isset($_GET["invoiced"]) ? (int)$_GET["invoiced"] : 0,
-        ":invoiced_at" => $_GET["invoiced_at"] ?? null,
+        ":invoiced_at" => norm_date($_GET["invoiced_at"] ?? null),
         ":qty" => isset($_GET["qty"]) ? $_GET["qty"] : null,
         ":current_work" => isset($_GET["current_work"]) ? (int)$_GET["current_work"] : 0,
         ":meta" => null,
