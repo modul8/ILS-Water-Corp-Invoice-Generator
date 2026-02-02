@@ -297,6 +297,13 @@ class SetupWizard(QDialog):
             settings.pop("rate_fire", None)
 
         if field_api_base:
+            if not field_api_base.startswith(("http://", "https://")):
+                QMessageBox.warning(
+                    self,
+                    "Invalid Field API URL",
+                    "Field API Base URL must start with http:// or https://",
+                )
+                return
             settings["field_api_base"] = field_api_base
         else:
             settings.pop("field_api_base", None)
