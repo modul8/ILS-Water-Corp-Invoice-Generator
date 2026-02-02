@@ -50,6 +50,7 @@ class WorkSheetScreen(QWidget):
         self._last_sync_attempt = 0.0
         self._min_sync_interval = 2.0
         self._full_sync_interval = 300.0
+        self._dirty_sync_pending = False
 
         self.module_id = module_id
         self.sheet_name = sheet_name
@@ -205,7 +206,15 @@ class WorkSheetScreen(QWidget):
             self.rows.append(r)
 
             key = j.get("job_key") or row_key(self.module_id, self.sheet_name, wo)
-            rec = self.state_store.get(key) or {}
+            existing = self.state_store.get(key) or {}
+            if existing.get("_dirty"):
+                # Preserve local changes until they are synced.
+                existing.setdefault("module", self.module_id)
+                existing["meta"] = {**meta, **(existing.get("meta") or {})}
+                self.state_store.upsert(key, existing)
+                continue
+
+            rec = existing
             rec["module"] = self.module_id
             rec["completed"] = bool(int(j.get("completed") or 0))
             rec["invoiced"] = bool(int(j.get("invoiced") or 0))
@@ -596,6 +605,7 @@ class WorkSheetScreen(QWidget):
         if not client:
             return
         if not self._can_sync_now():
+            self._schedule_dirty_sync()
             return
         try:
             jobs_payload = []
@@ -617,6 +627,19 @@ class WorkSheetScreen(QWidget):
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
         except Exception:
             self.sync_status.emit("Sync failed")
+
+    def _schedule_dirty_sync(self) -> None:
+        if self._dirty_sync_pending:
+            return
+        self._dirty_sync_pending = True
+
+        def _run() -> None:
+            self._dirty_sync_pending = False
+            self._sync_dirty()
+
+        t = threading.Timer(self._min_sync_interval, _run)
+        t.daemon = True
+        t.start()
 
     def _sync_with_server_async(self) -> None:
         t = threading.Thread(target=self._sync_with_server, daemon=True)
