@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List
+import json
 import logging
 from datetime import date
 import time
@@ -137,6 +138,19 @@ class WorkSheetScreen(QWidget):
             self.table.setRowCount(0)
             return
 
+        # Prefer server list if configured
+        client = self._get_sync_client()
+        if client:
+            try:
+                jobs = client.list_jobs(module=self.module_id, completed=None, limit=2000)
+            except Exception:
+                jobs = []
+            if jobs:
+                self._load_from_server_jobs(jobs)
+                self._sync_with_server_async()
+                self._populate()
+                return
+
         self.rows = load_work_list_sheet(work_list_path, self.sheet_name)
         for r in self.rows:
             k = row_key(self.module_id, self.sheet_name, r.wo)
@@ -163,6 +177,49 @@ class WorkSheetScreen(QWidget):
             self.state_store.set_dirty(k, True)
         self._sync_with_server_async()
         self._populate()
+
+    def _load_from_server_jobs(self, jobs: list[dict]) -> None:
+        self.rows = []
+        for j in jobs:
+            wo = str(j.get("work_order") or "").strip()
+            if not wo:
+                continue
+            meta = {}
+            raw_meta = j.get("meta")
+            if isinstance(raw_meta, str) and raw_meta.strip():
+                try:
+                    parsed = json.loads(raw_meta)
+                    if isinstance(parsed, dict):
+                        meta = parsed
+                except Exception:
+                    meta = {}
+
+            r = WorkListRow(
+                sheet=str(j.get("sheet") or self.sheet_name),
+                mp="",
+                wo=wo,
+                location=str(j.get("item") or meta.get("location") or ""),
+                call_date=str(meta.get("call_date") or ""),
+                po=str(j.get("po") or ""),
+            )
+            self.rows.append(r)
+
+            key = j.get("job_key") or row_key(self.module_id, self.sheet_name, wo)
+            rec = self.state_store.get(key) or {}
+            rec["module"] = self.module_id
+            rec["completed"] = bool(int(j.get("completed") or 0))
+            rec["invoiced"] = bool(int(j.get("invoiced") or 0))
+            if j.get("completed_at"):
+                rec["completed_at"] = j.get("completed_at")
+            else:
+                rec.pop("completed_at", None)
+            if j.get("invoiced_at"):
+                rec["invoiced_at"] = j.get("invoiced_at")
+            rec["qty"] = j.get("qty")
+            rec["unit"] = j.get("unit") or self.unit
+            rec["current_work"] = bool(int(j.get("current_work") or 0))
+            rec["meta"] = meta
+            self.state_store.upsert(key, rec)
 
     def _populate(self) -> None:
         self.table.blockSignals(True)

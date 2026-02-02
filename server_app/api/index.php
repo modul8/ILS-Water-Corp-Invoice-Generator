@@ -83,7 +83,7 @@ if ($action === "list" && $method === "GET") {
         $params[":q"] = "%" . $q . "%";
     }
 
-    $sql = "SELECT job_key, module, job_type, sheet, item, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
+    $sql = "SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
             FROM jobs";
     if ($where) {
         $sql .= " WHERE " . implode(" AND ", $where);
@@ -110,14 +110,16 @@ if ($action === "sync_jobs" && $method === "POST") {
     }
 
     $sql = "INSERT INTO jobs
-        (job_key, module, job_type, sheet, item, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
+        (job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
         VALUES
-        (:job_key, :module, :job_type, :sheet, :item, :work_order, :po, :unit, :qty_default, :completed, :completed_at, :invoiced, :invoiced_at, :qty, :current_work, :meta)
+        (:job_key, :module, :job_type, :sheet, :item, :lat, :lon, :work_order, :po, :unit, :qty_default, :completed, :completed_at, :invoiced, :invoiced_at, :qty, :current_work, :meta)
         ON DUPLICATE KEY UPDATE
         module = VALUES(module),
         job_type = VALUES(job_type),
         sheet = VALUES(sheet),
         item = VALUES(item),
+        lat = VALUES(lat),
+        lon = VALUES(lon),
         work_order = VALUES(work_order),
         po = VALUES(po),
         unit = VALUES(unit),
@@ -140,6 +142,8 @@ if ($action === "sync_jobs" && $method === "POST") {
             ":job_type" => $j["job_type"] ?? "",
             ":sheet" => $j["sheet"] ?? "",
             ":item" => $j["item"] ?? "",
+            ":lat" => $j["lat"] ?? null,
+            ":lon" => $j["lon"] ?? null,
             ":work_order" => $j["work_order"] ?? "",
             ":po" => $j["po"] ?? "",
             ":unit" => $j["unit"] ?? "",
@@ -173,6 +177,8 @@ if ($action === "upsert" && $method === "GET") {
         ":job_type" => $_GET["job_type"] ?? "",
         ":sheet" => $_GET["sheet"] ?? "",
         ":item" => $_GET["item"] ?? "",
+        ":lat" => $_GET["lat"] ?? null,
+        ":lon" => $_GET["lon"] ?? null,
         ":work_order" => $_GET["work_order"] ?? "",
         ":po" => $_GET["po"] ?? "",
         ":unit" => $_GET["unit"] ?? "",
@@ -187,14 +193,16 @@ if ($action === "upsert" && $method === "GET") {
     ];
 
     $sql = "INSERT INTO jobs
-        (job_key, module, job_type, sheet, item, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
+        (job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
         VALUES
-        (:job_key, :module, :job_type, :sheet, :item, :work_order, :po, :unit, :qty_default, :completed, :completed_at, :invoiced, :invoiced_at, :qty, :current_work, :meta)
+        (:job_key, :module, :job_type, :sheet, :item, :lat, :lon, :work_order, :po, :unit, :qty_default, :completed, :completed_at, :invoiced, :invoiced_at, :qty, :current_work, :meta)
         ON DUPLICATE KEY UPDATE
         module = VALUES(module),
         job_type = VALUES(job_type),
         sheet = VALUES(sheet),
         item = VALUES(item),
+        lat = VALUES(lat),
+        lon = VALUES(lon),
         work_order = VALUES(work_order),
         po = VALUES(po),
         unit = VALUES(unit),

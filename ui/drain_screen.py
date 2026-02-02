@@ -130,6 +130,19 @@ class DrainSprayingScreen(QWidget):
         work_list = (settings.get("work_list_path") or "").strip()
         spray_list = (settings.get("spray_list_path") or "").strip()
 
+        # Prefer server list if configured
+        client = self._get_sync_client()
+        if client:
+            try:
+                jobs = client.list_jobs(module="drain", completed=None, limit=2000)
+            except Exception:
+                jobs = []
+            if jobs:
+                self._load_from_server_jobs(jobs)
+                self._populate()
+                self._sync_with_server_async()
+                return
+
         if not work_list or not Path(work_list).exists():
             # No popup spam — just show empty table and stop.
             self.rows = []
@@ -184,6 +197,59 @@ class DrainSprayingScreen(QWidget):
         
         self._sync_with_server_async()
         self._populate()
+
+    def _load_from_server_jobs(self, jobs: list[dict]) -> None:
+        self.rows = []
+        for j in jobs:
+            drain = (j.get("item") or "").strip()
+            if not drain:
+                continue
+            meta = {}
+            raw_meta = j.get("meta")
+            if isinstance(raw_meta, str) and raw_meta.strip():
+                try:
+                    parsed = json.loads(raw_meta)
+                    if isinstance(parsed, dict):
+                        meta = parsed
+                except Exception:
+                    meta = {}
+
+            qty_default = j.get("qty_default")
+            try:
+                km = float(qty_default) if qty_default is not None else 0.0
+            except Exception:
+                km = 0.0
+
+            r = SprayRow(
+                sheet=str(j.get("sheet") or ""),
+                catchment=meta.get("catchment") or "",
+                drain=drain,
+                distance_m=km * 1000.0,
+                qty_km=round(km, 2),
+                lat=j.get("lat") if j.get("lat") is not None else meta.get("lat"),
+                lon=j.get("lon") if j.get("lon") is not None else meta.get("lon"),
+            )
+            r.work_order = j.get("work_order") or ""
+            r.po = j.get("po") or ""
+            r.completed = bool(int(j.get("completed") or 0))
+            self.rows.append(r)
+
+            key = j.get("job_key") or row_key(r)
+            rec = self.state_store.get(key) or {}
+            rec["module"] = "drain"
+            rec["completed"] = bool(int(j.get("completed") or 0))
+            rec["invoiced"] = bool(int(j.get("invoiced") or 0))
+            if j.get("completed_at"):
+                rec["completed_at"] = j.get("completed_at")
+            else:
+                rec.pop("completed_at", None)
+            if j.get("invoiced_at"):
+                rec["invoiced_at"] = j.get("invoiced_at")
+            rec["qty"] = j.get("qty")
+            rec["unit"] = j.get("unit") or "km"
+            rec["current_work"] = bool(int(j.get("current_work") or 0))
+            rec["meta"] = meta
+            self.state_store.upsert(key, rec)
 
     def _populate(self) -> None:
         self.table.blockSignals(True)
@@ -341,6 +407,8 @@ class DrainSprayingScreen(QWidget):
             "qty_km": qty_km,
             "work_order": getattr(r, "work_order", "") or "",
             "po": getattr(r, "po", "") or "",
+            "lat": getattr(r, "lat", None),
+            "lon": getattr(r, "lon", None),
         })
 
         self.state_store.upsert(k, existing)
@@ -397,6 +465,8 @@ class DrainSprayingScreen(QWidget):
             "job_type": "Drain spraying",
             "sheet": getattr(r, "sheet", ""),
             "item": getattr(r, "drain", ""),
+            "lat": getattr(r, "lat", None),
+            "lon": getattr(r, "lon", None),
             "work_order": getattr(r, "work_order", "") or "",
             "po": getattr(r, "po", "") or "",
             "unit": "km",
@@ -414,6 +484,8 @@ class DrainSprayingScreen(QWidget):
                 "qty_km": float(getattr(r, "qty_km", 0.0)),
                 "work_order": getattr(r, "work_order", "") or "",
                 "po": getattr(r, "po", "") or "",
+                "lat": getattr(r, "lat", None),
+                "lon": getattr(r, "lon", None),
             },
         }
 
@@ -480,6 +552,8 @@ class DrainSprayingScreen(QWidget):
                         "work_order": j.get("work_order") or meta.get("work_order") or "",
                         "po": j.get("po") or meta.get("po") or "",
                         "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or 0,
+                        "lat": j.get("lat") if j.get("lat") is not None else meta.get("lat"),
+                        "lon": j.get("lon") if j.get("lon") is not None else meta.get("lon"),
                     }
                 )
                 rec["meta"] = meta

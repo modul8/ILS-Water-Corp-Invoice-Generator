@@ -42,6 +42,8 @@ class SprayRow:
     drain: str
     distance_m: float
     qty_km: float
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
     work_order: Optional[str] = None
     po: Optional[str] = None
@@ -70,7 +72,12 @@ def load_spray_list(path: str) -> List[SprayRow]:
         # Try to find header row containing "Drain Name" in column A
         header_row = None
         for r in range(1, min(ws.max_row, 60) + 1):
-            if norm(ws.cell(r, 1).value) == "DRAIN NAME":
+            a_norm = norm(ws.cell(r, 1).value)
+            d_norm = norm(ws.cell(r, 4).value)
+            if a_norm == "DRAIN NAME":
+                header_row = r
+                break
+            if "DRAIN" in a_norm and d_norm in {"TOTAL DIST", "TOTAL DISTANCE"}:
                 header_row = r
                 break
 
@@ -79,6 +86,8 @@ def load_spray_list(path: str) -> List[SprayRow]:
         for r in range(start_row, ws.max_row + 1):
             a = ws.cell(r, 1).value  # Drain Name or Catchment
             d = ws.cell(r, 4).value  # Distance (m)
+            lat_raw = ws.cell(r, 6).value  # Pins -> Lat
+            lon_raw = ws.cell(r, 7).value  # Pins -> Long
 
             a_str = str(a).strip() if a is not None else ""
             a_norm = norm(a_str)
@@ -106,6 +115,9 @@ def load_spray_list(path: str) -> List[SprayRow]:
             if not drain:
                 continue
 
+            lat = safe_float(lat_raw)
+            lon = safe_float(lon_raw)
+
             out.append(
                 SprayRow(
                     sheet=ws.title,
@@ -113,6 +125,8 @@ def load_spray_list(path: str) -> List[SprayRow]:
                     drain=drain,
                     distance_m=float(dist),
                     qty_km=round(float(dist) / 1000.0, 2),
+                    lat=lat,
+                    lon=lon,
                 )
             )
 

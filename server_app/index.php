@@ -123,6 +123,12 @@ function unitSuffix(unit) {
   return "ea";
 }
 
+function mapLink(lat, lon) {
+  if (lat === null || lon === null || lat === "" || lon === "") return "";
+  const url = `https://maps.google.com/?q=${lat},${lon}`;
+  return `<a href="${url}" target="_blank" rel="noopener">Open Map</a>`;
+}
+
 async function apiGet(params) {
   const url = new URL(API_URL, window.location.href);
   url.searchParams.set("key", API_KEY);
@@ -202,11 +208,13 @@ async function loadJobs() {
       const isDrain = (j.module || "").toLowerCase() === "drain";
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
+      const map = mapLink(j.lat, j.lon);
       const html = `
       <div class="card">
         <div class="title">${j.item || ""} <span class="badge">${suffix}</span></div>
         <div class="module">${jobTypeLabel(j.module)}</div>
         <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"}</div>
+        ${map ? `<div class="meta">${map}</div>` : ""}
         <div class="row">
           <input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}" ${isDrain ? "disabled" : ""}>
           <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>

@@ -119,6 +119,8 @@ class FieldSyncClient:
                 "job_type": j.get("job_type", ""),
                 "sheet": j.get("sheet", ""),
                 "item": j.get("item", ""),
+                "lat": j.get("lat", ""),
+                "lon": j.get("lon", ""),
                 "work_order": j.get("work_order", ""),
                 "po": j.get("po", ""),
                 "unit": j.get("unit", ""),
