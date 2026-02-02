@@ -426,60 +426,66 @@ class DrainSprayingScreen(QWidget):
             now = time.time()
             full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
 
-            if full_sync_due:
-                since = self._get_last_change_sync()
-                changed_jobs = client.changes(since=since)
-                for j in changed_jobs:
-                    if j.get("module") != "drain":
-                        continue
-                    job_key = j.get("job_key") or ""
-                    if not job_key:
-                        continue
-                    rec = self.state_store.get(job_key) or {}
-                    if rec.get("_dirty"):
-                        continue
-                    completed_val = j.get("completed")
-                    if completed_val is not None:
-                        rec["completed"] = bool(int(completed_val))
-                    if j.get("invoiced") is not None:
-                        rec["invoiced"] = bool(int(j.get("invoiced")))
-                    if j.get("current_work") is not None:
-                        rec["current_work"] = bool(int(j.get("current_work")))
-                    if j.get("invoiced_at"):
-                        rec["invoiced_at"] = j.get("invoiced_at")
-                    qty = j.get("qty")
-                    if qty is not None:
-                        try:
-                            rec["qty"] = float(qty)
-                        except Exception:
-                            pass
-                    rec["unit"] = "km"
-                    rec["module"] = "drain"
-                    if j.get("completed_at"):
-                        rec["completed_at"] = j.get("completed_at")
-                    elif completed_val is not None and not bool(int(completed_val)):
-                        rec.pop("completed_at", None)
-                    meta = rec.get("meta") or {}
-                    raw_meta = j.get("meta")
-                    if isinstance(raw_meta, str) and raw_meta.strip():
-                        try:
-                            parsed = json.loads(raw_meta)
-                            if isinstance(parsed, dict):
-                                meta.update(parsed)
-                        except Exception:
-                            pass
-                    meta.update(
-                        {
-                            "sheet": j.get("sheet") or meta.get("sheet") or "",
-                            "catchment": meta.get("catchment") or "",
-                            "drain": j.get("item") or meta.get("drain") or "",
-                            "work_order": j.get("work_order") or meta.get("work_order") or "",
-                            "po": j.get("po") or meta.get("po") or "",
-                            "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or 0,
-                        }
-                    )
-                    rec["meta"] = meta
-                    self.state_store.upsert(job_key, rec)
+            since = self._get_last_change_sync()
+            changed_jobs = client.changes(since=since)
+            max_updated = ""
+            for j in changed_jobs:
+                if j.get("module") != "drain":
+                    continue
+                job_key = j.get("job_key") or ""
+                if not job_key:
+                    continue
+                rec = self.state_store.get(job_key) or {}
+                if rec.get("_dirty"):
+                    continue
+                completed_val = j.get("completed")
+                if completed_val is not None:
+                    rec["completed"] = bool(int(completed_val))
+                if j.get("invoiced") is not None:
+                    rec["invoiced"] = bool(int(j.get("invoiced")))
+                if j.get("current_work") is not None:
+                    rec["current_work"] = bool(int(j.get("current_work")))
+                if j.get("invoiced_at"):
+                    rec["invoiced_at"] = j.get("invoiced_at")
+                qty = j.get("qty")
+                if qty is not None:
+                    try:
+                        rec["qty"] = float(qty)
+                    except Exception:
+                        pass
+                rec["unit"] = "km"
+                rec["module"] = "drain"
+                if j.get("completed_at"):
+                    rec["completed_at"] = j.get("completed_at")
+                elif completed_val is not None and not bool(int(completed_val)):
+                    rec.pop("completed_at", None)
+                meta = rec.get("meta") or {}
+                raw_meta = j.get("meta")
+                if isinstance(raw_meta, str) and raw_meta.strip():
+                    try:
+                        parsed = json.loads(raw_meta)
+                        if isinstance(parsed, dict):
+                            meta.update(parsed)
+                    except Exception:
+                        pass
+                meta.update(
+                    {
+                        "sheet": j.get("sheet") or meta.get("sheet") or "",
+                        "catchment": meta.get("catchment") or "",
+                        "drain": j.get("item") or meta.get("drain") or "",
+                        "work_order": j.get("work_order") or meta.get("work_order") or "",
+                        "po": j.get("po") or meta.get("po") or "",
+                        "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or 0,
+                    }
+                )
+                rec["meta"] = meta
+                self.state_store.upsert(job_key, rec)
+                updated_at = j.get("updated_at") or ""
+                if isinstance(updated_at, str) and updated_at > max_updated:
+                    max_updated = updated_at
+            if max_updated:
+                self._set_last_change_sync(max_updated)
+            elif changed_jobs:
                 self._set_last_change_sync(client.utc_now_mysql())
 
             jobs_payload = []
