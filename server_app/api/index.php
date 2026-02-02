@@ -142,29 +142,36 @@ if ($action === "sync_jobs" && $method === "POST") {
 
     $stmt = $pdo->prepare($sql);
     $count = 0;
-    foreach ($jobs as $j) {
-        if (!isset($j["job_key"]) || !isset($j["module"])) continue;
-        $stmt->execute([
-            ":job_key" => $j["job_key"],
-            ":module" => $j["module"],
-            ":job_type" => $j["job_type"] ?? "",
-            ":sheet" => $j["sheet"] ?? "",
-            ":item" => $j["item"] ?? "",
-            ":lat" => $j["lat"] ?? null,
-            ":lon" => $j["lon"] ?? null,
-            ":work_order" => $j["work_order"] ?? "",
-            ":po" => $j["po"] ?? "",
-            ":unit" => $j["unit"] ?? "",
-            ":qty_default" => isset($j["qty_default"]) ? $j["qty_default"] : null,
-            ":completed" => isset($j["completed"]) ? (int)$j["completed"] : 0,
-            ":completed_at" => $j["completed_at"] ?? null,
-            ":invoiced" => isset($j["invoiced"]) ? (int)$j["invoiced"] : 0,
-            ":invoiced_at" => $j["invoiced_at"] ?? null,
-            ":qty" => isset($j["qty"]) ? $j["qty"] : null,
-            ":current_work" => isset($j["current_work"]) ? (int)$j["current_work"] : 0,
-            ":meta" => isset($j["meta"]) ? json_encode($j["meta"]) : null,
-        ]);
-        $count++;
+    try {
+        foreach ($jobs as $j) {
+            if (!isset($j["job_key"]) || !isset($j["module"])) continue;
+            $stmt->execute([
+                ":job_key" => $j["job_key"],
+                ":module" => $j["module"],
+                ":job_type" => $j["job_type"] ?? "",
+                ":sheet" => $j["sheet"] ?? "",
+                ":item" => $j["item"] ?? "",
+                ":lat" => $j["lat"] ?? null,
+                ":lon" => $j["lon"] ?? null,
+                ":work_order" => $j["work_order"] ?? "",
+                ":po" => $j["po"] ?? "",
+                ":unit" => $j["unit"] ?? "",
+                ":qty_default" => isset($j["qty_default"]) ? $j["qty_default"] : null,
+                ":completed" => isset($j["completed"]) ? (int)$j["completed"] : 0,
+                ":completed_at" => $j["completed_at"] ?? null,
+                ":invoiced" => isset($j["invoiced"]) ? (int)$j["invoiced"] : 0,
+                ":invoiced_at" => $j["invoiced_at"] ?? null,
+                ":qty" => isset($j["qty"]) ? $j["qty"] : null,
+                ":current_work" => isset($j["current_work"]) ? (int)$j["current_work"] : 0,
+                ":meta" => isset($j["meta"]) ? json_encode($j["meta"]) : null,
+            ]);
+            $count++;
+        }
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("sync_jobs failed: " . $e->getMessage());
+        echo json_encode(["ok" => false, "error" => $e->getMessage()]);
+        exit;
     }
     echo json_encode(["ok" => true, "count" => $count]);
     exit;
@@ -263,7 +270,14 @@ if ($action === "upsert" && $method === "GET") {
         current_work = VALUES(current_work)";
 
     $stmt = $pdo->prepare($sql);
-    $stmt->execute($payload);
+    try {
+        $stmt->execute($payload);
+    } catch (Exception $e) {
+        http_response_code(500);
+        error_log("upsert failed: " . $e->getMessage());
+        echo json_encode(["ok" => false, "error" => $e->getMessage()]);
+        exit;
+    }
     echo json_encode(["ok" => true]);
     exit;
 }
