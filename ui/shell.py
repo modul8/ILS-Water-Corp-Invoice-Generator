@@ -336,7 +336,7 @@ class AppShell(QMainWindow):
     def _check_updates_async(self) -> None:
         def _worker():
             info = fetch_update_info(
-                "https://app.integratedliningsystems.com.au/updates/latest.json"
+                "https://modul8.github.io/ILS-Water-Corp-Invoice-Generator/updates/latest.json"
             )
             if not info:
                 return
@@ -348,7 +348,7 @@ class AppShell(QMainWindow):
     def _check_updates_manual(self) -> None:
         def _worker():
             info, err = fetch_update_info_with_error(
-                "https://app.integratedliningsystems.com.au/updates/latest.json"
+                "https://modul8.github.io/ILS-Water-Corp-Invoice-Generator/updates/latest.json"
             )
             if not info:
                 self.update_ready.emit(UpdateInfo(version="", url="", notes=f"__error__:{err}"))
