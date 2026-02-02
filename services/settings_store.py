@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -31,7 +32,13 @@ class SettingsStore:
         return {}
 
     def save_settings(self, settings: Dict[str, Any]) -> None:
-        self.settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        payload = json.dumps(settings, indent=2)
+        tmp_path = self.settings_path.with_suffix(".json.tmp")
+        try:
+            tmp_path.write_text(payload, encoding="utf-8")
+            tmp_path.replace(self.settings_path)
+        except Exception as e:
+            logging.getLogger(__name__).warning("save_settings_failed err=%s", str(e)[:200])
 
     def set_api_key(self, api_key: str) -> None:
         api_key = (api_key or "").strip()
