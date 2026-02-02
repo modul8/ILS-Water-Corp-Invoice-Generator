@@ -193,7 +193,9 @@ class DrainSprayingScreen(QWidget):
         hide_missing = self.btn_hide_missing.isChecked()
 
         for r in self.rows:
-            completed = bool(getattr(r, "completed", False))
+            k = row_key(r)
+            rec = self.state_store.get(k) or {}
+            completed = bool(rec.get("completed", False))
             wo = getattr(r, "work_order", "") or ""
             po = getattr(r, "po", "") or ""
             if hide_completed and completed:
@@ -204,15 +206,13 @@ class DrainSprayingScreen(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            k = row_key(r)
-            rec = self.state_store.get(k) or {}
             current_work = bool(rec.get("current_work", False))
 
             sheet = getattr(r, "sheet", "")
             catchment = getattr(r, "catchment", "") or ""
             drain = getattr(r, "drain", "")
             km = float(getattr(r, "qty_km", 0.0))
-            invoiced = bool(getattr(r, "invoiced", False))
+            invoiced = bool(rec.get("invoiced", False))
             values = [sheet, catchment, drain, f"{km:.2f}", wo, po,
                     "YES" if completed else "NO",
                     "YES" if invoiced else "NO",
