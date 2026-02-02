@@ -19,7 +19,13 @@ import threading
 import json
 
 # Your copied V1 loader goes here:
-from data.data_loader import load_spray_list, load_spray_drains_mapping, attach_work_info, norm
+from data.data_loader import (
+    SprayRow,
+    load_spray_list,
+    load_spray_drains_mapping,
+    attach_work_info,
+    norm,
+)
 
 
 def row_key(r) -> str:
@@ -220,6 +226,9 @@ class DrainSprayingScreen(QWidget):
             except Exception:
                 km = 0.0
 
+            if "qty_km" not in meta:
+                meta["qty_km"] = round(km, 2)
+
             r = SprayRow(
                 sheet=str(j.get("sheet") or ""),
                 catchment=meta.get("catchment") or "",
@@ -245,7 +254,11 @@ class DrainSprayingScreen(QWidget):
                 rec.pop("completed_at", None)
             if j.get("invoiced_at"):
                 rec["invoiced_at"] = j.get("invoiced_at")
-            rec["qty"] = j.get("qty")
+            rec_qty = j.get("qty")
+            if rec_qty in (None, ""):
+                rec_qty = round(km, 2)
+            rec["qty"] = rec_qty
+            rec["qty_default"] = qty_default
             rec["unit"] = j.get("unit") or "km"
             rec["current_work"] = bool(int(j.get("current_work") or 0))
             rec["meta"] = meta

@@ -122,14 +122,16 @@ class StateStore:
             if not bool(rec.get("completed")):
                 continue
 
-            qty = rec.get("qty", 0) or 0
+            meta = rec.get("meta") or {}
+            qty = rec.get("qty", None)
+            if qty in (None, ""):
+                qty = meta.get("qty_km") or meta.get("qty") or rec.get("qty_default", 0)
             try:
                 if float(qty) <= 0:
                     continue
             except Exception:
                 continue
 
-            meta = rec.get("meta") or {}
             sig = (
                 rec.get("module", ""),
                 meta.get("sheet") or meta.get("catchment") or "",
