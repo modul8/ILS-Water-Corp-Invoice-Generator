@@ -50,7 +50,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/dist/ILS_WaterCorp_Invoice_Generator_Setup.exe
+          files: "**/installer/dist/ILS_WaterCorp_Invoice_Generator_Setup.exe"
 
       - name: Generate latest.json
         shell: pwsh
