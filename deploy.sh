@@ -3,6 +3,7 @@ set -euo pipefail
 
 SRC_DIR="/mnt/evo-pool/apps/ils_app_repo/server_app/"
 DEST_DIR="/mnt/evo-pool/apps/ils_app/"
+APP_OWNER="${APP_OWNER:-}"
 
 rsync -av --delete \
   --no-times --omit-dir-times --no-perms --no-owner --no-group \
@@ -11,6 +12,16 @@ rsync -av --delete \
   --exclude 'uploads/' \
   "$SRC_DIR" \
   "$DEST_DIR"
+
+# Ensure PHP user can read vendor after sync.
+if [ -d "$DEST_DIR/vendor" ]; then
+  if [ -n "$APP_OWNER" ]; then
+    chown -R "$APP_OWNER" "$DEST_DIR/vendor"
+  elif id -u application >/dev/null 2>&1; then
+    chown -R application:application "$DEST_DIR/vendor"
+  fi
+  chmod -R u+rwX,go+rX "$DEST_DIR/vendor"
+fi
 
 # Sync assets separately so upgrades can refresh them while still keeping config.php.
 if [ -d "$SRC_DIR/assets" ]; then
