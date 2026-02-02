@@ -60,6 +60,7 @@ class DrainSprayingScreen(QWidget):
         self._dirty_sync_pending = False
 
         self.rows = []  # list of SprayRow-like objects
+        self._display_rows: list = []
 
         root = QVBoxLayout(self)
         header = QHBoxLayout()
@@ -276,6 +277,7 @@ class DrainSprayingScreen(QWidget):
     def _populate(self) -> None:
         self.table.blockSignals(True)
         self.table.setRowCount(0)
+        self._display_rows = []
 
         hide_completed = self.btn_hide_completed.isChecked()
         hide_missing = self.btn_hide_missing.isChecked()
@@ -291,6 +293,7 @@ class DrainSprayingScreen(QWidget):
             if hide_missing and not wo and not po:
                 continue
 
+            self._display_rows.append(r)
             row = self.table.rowCount()
             self.table.insertRow(row)
 
@@ -385,9 +388,9 @@ class DrainSprayingScreen(QWidget):
             return
 
     def _toggle_completed(self, row: int) -> None:
-        if row < 0 or row >= len(self.rows):
+        if row < 0 or row >= len(self._display_rows):
             return
-        r = self.rows[row]
+        r = self._display_rows[row]
         completed_now = bool(getattr(r, "completed", False))
         if completed_now:
             confirm = QMessageBox.question(
