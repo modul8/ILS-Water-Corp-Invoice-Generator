@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -134,7 +135,7 @@ class SetupWizard(QDialog):
         self.btn_reset_state = QPushButton("Reset local state")
         self.btn_reset_state.clicked.connect(self._reset_local_state)
 
-        self.btn_save = QPushButton("Save & Continue")
+        self.btn_save = QPushButton("Save and Continue")
         self.btn_save.clicked.connect(self._save_and_continue)
 
         btn_cancel = QPushButton("Cancel")
