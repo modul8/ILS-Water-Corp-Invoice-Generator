@@ -75,6 +75,77 @@ function ensure_upload_dir(): string {
     return $dir;
 }
 
+function latest_upload(string $prefix): string {
+    $dir = ensure_upload_dir();
+    $files = glob($dir . "/" . $prefix . "*.xlsx");
+    if (!$files) return "";
+    rsort($files, SORT_STRING);
+    return $files[0];
+}
+
+function master_spray_list(array $cfg): string {
+    $path = trim((string)($cfg["spray_list_master"] ?? ""));
+    if ($path !== "") return $path;
+    return latest_upload("spray_list_");
+}
+
+function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon): array {
+    if (!file_exists($path)) {
+        return ["ok" => false, "error" => "spray_list_not_found"];
+    }
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) {
+        return ["ok" => false, "error" => "phpspreadsheet_missing"];
+    }
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+    try {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+    } catch (Exception $e) {
+        return ["ok" => false, "error" => "spray_list_load_failed"];
+    }
+
+    $ws = $spreadsheet->getSheetByName($sheet);
+    if ($ws === null) {
+        return ["ok" => false, "error" => "sheet_not_found"];
+    }
+
+    $header_row = 0;
+    for ($r = 1; $r <= 20; $r++) {
+        $a = trim((string)$ws->getCell("A{$r}")->getValue());
+        $d = trim((string)$ws->getCell("D{$r}")->getValue());
+        if ($a !== "" && stripos($a, "DRAIN") !== false && stripos($d, "TOTAL") !== false) {
+            $header_row = $r;
+            break;
+        }
+    }
+    $start_row = $header_row ? $header_row + 1 : 1;
+    $end_row = $ws->getHighestRow();
+    $found = false;
+    for ($r = $start_row; $r <= $end_row; $r++) {
+        $name = trim((string)$ws->getCell("A{$r}")->getValue());
+        if ($name === "") {
+            continue;
+        }
+        if (strcasecmp($name, $drain) === 0) {
+            $ws->setCellValue("F{$r}", $lat === "" ? null : $lat);
+            $ws->setCellValue("G{$r}", $lon === "" ? null : $lon);
+            $found = true;
+            break;
+        }
+    }
+    if (!$found) {
+        return ["ok" => false, "error" => "drain_not_found_in_sheet"];
+    }
+
+    try {
+        $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, "Xlsx");
+        $writer->save($path);
+    } catch (Exception $e) {
+        return ["ok" => false, "error" => "spray_list_save_failed"];
+    }
+
+    return ["ok" => true];
+}
+
 if ($action === "list" && $method === "GET") {
     $module = isset($_GET["module"]) ? trim($_GET["module"]) : "";
     $completed = isset($_GET["completed"]) ? trim($_GET["completed"]) : "";
@@ -108,6 +179,45 @@ if ($action === "list" && $method === "GET") {
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(["ok" => true, "jobs" => $rows]);
+    exit;
+}
+
+if ($action === "update_pin" && $method === "POST") {
+    $body = form_or_json();
+    $job_key = isset($body["job_key"]) ? trim($body["job_key"]) : "";
+    $lat = isset($body["lat"]) ? trim((string)$body["lat"]) : "";
+    $lon = isset($body["lon"]) ? trim((string)$body["lon"]) : "";
+    if ($job_key === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_job_key"]);
+        exit;
+    }
+
+    $parts = explode("|", $job_key, 3);
+    $sheet = isset($body["sheet"]) && $body["sheet"] !== "" ? trim((string)$body["sheet"]) : ($parts[0] ?? "");
+    $drain = isset($body["drain"]) && $body["drain"] !== "" ? trim((string)$body["drain"]) : ($parts[2] ?? "");
+    if ($sheet === "" || $drain === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_sheet_or_drain"]);
+        exit;
+    }
+
+    $stmt = $pdo->prepare("UPDATE jobs SET lat = :lat, lon = :lon WHERE job_key = :job_key");
+    $stmt->execute([
+        ":lat" => $lat === "" ? null : $lat,
+        ":lon" => $lon === "" ? null : $lon,
+        ":job_key" => $job_key,
+    ]);
+
+    $path = master_spray_list($cfg);
+    $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
+    if (!$pin_result["ok"]) {
+        http_response_code(500);
+        echo json_encode($pin_result);
+        exit;
+    }
+
+    echo json_encode(["ok" => true]);
     exit;
 }
 

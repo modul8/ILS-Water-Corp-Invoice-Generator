@@ -209,6 +209,8 @@ async function loadJobs() {
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
       const map = mapLink(j.lat, j.lon);
+      const latVal = (j.lat !== null && j.lat !== undefined) ? j.lat : "";
+      const lonVal = (j.lon !== null && j.lon !== undefined) ? j.lon : "";
       const html = `
       <div class="card">
         <div class="title">${j.item || ""} <span class="badge">${suffix}</span></div>
@@ -219,6 +221,13 @@ async function loadJobs() {
           <input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}" ${isDrain ? "disabled" : ""}>
           <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
         </div>
+        ${isDrain ? `
+        <div class="row">
+          <input type="number" step="0.000001" placeholder="Lat" value="${latVal}" id="lat-${j.job_key}">
+          <input type="number" step="0.000001" placeholder="Lon" value="${lonVal}" id="lon-${j.job_key}">
+          <button class="secondary" onclick="useGps('${j.job_key}')">Use GPS</button>
+          <button onclick="savePin('${j.job_key}')">Save Pin</button>
+        </div>` : ""}
       </div>
     `;
       list.insertAdjacentHTML("beforeend", html);
@@ -231,6 +240,36 @@ async function markCompleted(jobKey, completed) {
   const resp = await apiPost("complete", { job_key: jobKey, completed: completed, qty: qty });
   if (!resp.ok) {
     showError("API error updating job. Check server connection or API key.");
+  } else {
+    showError("");
+    loadJobs();
+  }
+}
+
+function useGps(jobKey) {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported on this device.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const latEl = document.getElementById(`lat-${jobKey}`);
+      const lonEl = document.getElementById(`lon-${jobKey}`);
+      if (latEl) latEl.value = pos.coords.latitude.toFixed(6);
+      if (lonEl) lonEl.value = pos.coords.longitude.toFixed(6);
+    },
+    () => alert("Unable to get location. Check permissions.")
+  );
+}
+
+async function savePin(jobKey) {
+  const latEl = document.getElementById(`lat-${jobKey}`);
+  const lonEl = document.getElementById(`lon-${jobKey}`);
+  const lat = latEl ? latEl.value.trim() : "";
+  const lon = lonEl ? lonEl.value.trim() : "";
+  const resp = await apiPost("update_pin", { job_key: jobKey, lat: lat, lon: lon });
+  if (!resp.ok) {
+    showError("API error saving pin. Check server connection.");
   } else {
     showError("");
     loadJobs();
