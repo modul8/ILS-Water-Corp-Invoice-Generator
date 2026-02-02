@@ -9,7 +9,10 @@ from datetime import datetime, timezone
 
 class FieldSyncClient:
     def __init__(self, base_url: str, api_key: str) -> None:
-        base = (base_url or "").strip().rstrip("/")
+        base = (base_url or "").strip()
+        if base and "://" not in base:
+            base = "https://" + base
+        base = base.rstrip("/")
         if base.endswith("/api"):
             base = base[: -len("/api")]
         if base.endswith("/api/index.php"):
