@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 
 from services.settings_store import SettingsStore
 from services.dolibarr_client import DolibarrClient
+from services.field_sync import FieldSyncClient
+from data.data_loader import load_spray_list, load_spray_drains_mapping, attach_work_info, load_work_list_sheet
 
 
 class SetupWizard(QDialog):
@@ -135,6 +137,9 @@ class SetupWizard(QDialog):
         self.btn_reset_state = QPushButton("Reset local state")
         self.btn_reset_state.clicked.connect(self._reset_local_state)
 
+        self.btn_upload = QPushButton("Upload to Server")
+        self.btn_upload.clicked.connect(self._upload_to_server)
+
         self.btn_save = QPushButton("Save and Continue")
         self.btn_save.clicked.connect(self._save_and_continue)
 
@@ -143,6 +148,7 @@ class SetupWizard(QDialog):
 
         btn_row.addWidget(self.btn_test)
         btn_row.addWidget(self.btn_reset_state)
+        btn_row.addWidget(self.btn_upload)
         btn_row.addWidget(self.btn_save)
         btn_row.addWidget(btn_cancel)
 
@@ -317,6 +323,125 @@ class SetupWizard(QDialog):
         self.store.set_api_key(api_key)
 
         self.accept()
+
+    def _get_field_client(self) -> FieldSyncClient | None:
+        base = self.field_api_base_edit.text().strip()
+        key = self.field_api_key_edit.text().strip()
+        if not base or not key:
+            return None
+        return FieldSyncClient(base, key)
+
+    def _upload_to_server(self) -> None:
+        client = self._get_field_client()
+        if not client:
+            QMessageBox.warning(self, "Missing Field API", "Enter Field API Base URL and API Key first.")
+            return
+
+        work_list = self.work_list_edit.text().strip()
+        spray_list = self.spray_list_edit.text().strip()
+
+        if not work_list or not Path(work_list).exists():
+            QMessageBox.warning(self, "Work List missing", "Please choose a valid Work List .xlsx file.")
+            return
+
+        # Upload files (keep originals on server)
+        up1 = client.upload_file(kind="work_list", path=work_list)
+        if not up1.get("ok"):
+            QMessageBox.warning(self, "Upload failed", f"Work list upload failed: {up1.get('error')}")
+            return
+
+        if spray_list and Path(spray_list).exists():
+            up2 = client.upload_file(kind="spray_list", path=spray_list)
+            if not up2.get("ok"):
+                QMessageBox.warning(self, "Upload failed", f"Spray list upload failed: {up2.get('error')}")
+                return
+
+        # Build job payloads and push to server as source of truth
+        jobs_payload: list[dict] = []
+
+        # Drain spraying jobs
+        if spray_list and Path(spray_list).exists():
+            spray_rows = load_spray_list(spray_list)
+            sheet_name = "Spray Drains"
+            try:
+                po, mapping = load_spray_drains_mapping(work_list, sheet_name=sheet_name)
+                attach_work_info(spray_rows, po=po, mapping=mapping)
+            except Exception:
+                po, mapping = "", {}
+
+            for r in spray_rows:
+                jobs_payload.append({
+                    "job_key": f"{r.sheet}|{(r.catchment or '').strip()}|{r.drain}",
+                    "module": "drain",
+                    "job_type": "Drain spraying",
+                    "sheet": r.sheet,
+                    "item": r.drain,
+                    "lat": r.lat,
+                    "lon": r.lon,
+                    "work_order": r.work_order or "",
+                    "po": r.po or "",
+                    "unit": "km",
+                    "qty_default": float(r.qty_km),
+                    "completed": 0,
+                    "completed_at": "",
+                    "invoiced": 0,
+                    "invoiced_at": "",
+                    "qty": None,
+                    "current_work": 0,
+                    "meta": {
+                        "sheet": r.sheet,
+                        "catchment": r.catchment or "",
+                        "drain": r.drain,
+                        "qty_km": float(r.qty_km),
+                        "work_order": r.work_order or "",
+                        "po": r.po or "",
+                        "lat": r.lat,
+                        "lon": r.lon,
+                    },
+                })
+
+        # Work list modules
+        for module_id, sheet_name, unit in [
+            ("weeds", "Noxious Weeds", "hour"),
+            ("tracks", "Mtn Access Tracks", "km"),
+            ("fire", "Fire Zone", "each"),
+        ]:
+            rows = load_work_list_sheet(work_list, sheet_name)
+            for r in rows:
+                job_key = f"{module_id}:{sheet_name}:{r.wo}"
+                jobs_payload.append({
+                    "job_key": job_key,
+                    "module": module_id,
+                    "job_type": sheet_name,
+                    "sheet": sheet_name,
+                    "item": r.location,
+                    "work_order": r.wo,
+                    "po": r.po,
+                    "unit": unit,
+                    "qty_default": None,
+                    "completed": 0,
+                    "completed_at": "",
+                    "invoiced": 0,
+                    "invoiced_at": "",
+                    "qty": None,
+                    "current_work": 0,
+                    "meta": {
+                        "location": r.location,
+                        "call_date": r.call_date,
+                        "sheet": sheet_name,
+                    },
+                })
+
+        if not jobs_payload:
+            QMessageBox.warning(self, "No jobs", "No jobs found to upload.")
+            return
+
+        result = client.sync_jobs(jobs_payload)
+        if not result.get("ok"):
+            QMessageBox.warning(self, "Upload failed", f"Job sync failed: {result.get('error')}")
+            return
+
+        QMessageBox.information(self, "Upload complete", "Files uploaded and jobs synced to server.")
 
     def _reset_local_state(self) -> None:
         confirm = QMessageBox.question(

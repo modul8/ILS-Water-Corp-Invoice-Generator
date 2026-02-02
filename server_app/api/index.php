@@ -61,6 +61,14 @@ function form_or_json() {
 $action = isset($_GET["action"]) ? $_GET["action"] : "";
 $method = $_SERVER["REQUEST_METHOD"];
 
+function ensure_upload_dir(): string {
+    $dir = dirname(__DIR__) . "/uploads";
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
 if ($action === "list" && $method === "GET") {
     $module = isset($_GET["module"]) ? trim($_GET["module"]) : "";
     $completed = isset($_GET["completed"]) ? trim($_GET["completed"]) : "";
@@ -159,6 +167,46 @@ if ($action === "sync_jobs" && $method === "POST") {
         $count++;
     }
     echo json_encode(["ok" => true, "count" => $count]);
+    exit;
+}
+
+if ($action === "upload" && $method === "POST") {
+    if (!isset($_FILES["file"])) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_file"]);
+        exit;
+    }
+    $kind = isset($_POST["kind"]) ? trim($_POST["kind"]) : "file";
+    $f = $_FILES["file"];
+    if (!isset($f["tmp_name"]) || !is_uploaded_file($f["tmp_name"])) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "invalid_upload"]);
+        exit;
+    }
+    $orig = isset($f["name"]) ? basename($f["name"]) : "upload.xlsx";
+    $ext = pathinfo($orig, PATHINFO_EXTENSION);
+    $ts = date("Ymd_His");
+    $safe_kind = preg_replace("/[^a-z0-9_-]/i", "_", $kind);
+    $safe_name = preg_replace("/[^a-z0-9_.-]/i", "_", $orig);
+    $fname = $safe_kind . "_" . $ts . "_" . $safe_name;
+    if ($ext) {
+        // keep extension from original name
+    } else {
+        $fname .= ".xlsx";
+    }
+    $dir = ensure_upload_dir();
+    $dest = $dir . "/" . $fname;
+    if (!move_uploaded_file($f["tmp_name"], $dest)) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "save_failed"]);
+        exit;
+    }
+    echo json_encode([
+        "ok" => true,
+        "filename" => $fname,
+        "kind" => $safe_kind,
+        "size" => isset($f["size"]) ? (int)$f["size"] : null,
+    ]);
     exit;
 }
 

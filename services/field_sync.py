@@ -178,3 +178,22 @@ class FieldSyncClient:
             "invoiced_at": invoiced_at or "",
         }
         return self._request("GET", "set_invoiced", params=params)
+
+    def upload_file(self, *, kind: str, path: str) -> Dict[str, Any]:
+        url = f"{self.base_url}/api/index.php"
+        params = {"action": "upload", "key": self.api_key}
+        try:
+            with open(path, "rb") as f:
+                files = {"file": (path.split("\\")[-1], f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+                data = {"kind": kind}
+                r = requests.post(url, params=params, files=files, data=data, timeout=30)
+        except Exception as e:
+            self._log.warning("upload_failed kind=%s err=%s", kind, str(e)[:200])
+            return {"ok": False, "error": "request_failed", "text": str(e)[:200]}
+        if r.status_code >= 300:
+            self._log.warning("upload_http_error kind=%s status=%s body=%s", kind, r.status_code, (r.text or "")[:200])
+            return {"ok": False, "error": f"http_{r.status_code}", "text": (r.text or "")[:200]}
+        try:
+            return r.json()
+        except Exception:
+            return {"ok": False, "error": "bad_json", "text": (r.text or "")[:200]}
