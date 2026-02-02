@@ -357,6 +357,9 @@ class DrainSprayingScreen(QWidget):
     def _full_sync_key(self) -> str:
         return "field_sync_last_full_drain"
 
+    def _change_sync_key(self) -> str:
+        return "field_sync_last_change_drain"
+
     def _get_last_full_sync(self) -> float:
         settings = self.store.load_settings()
         try:
@@ -367,6 +370,15 @@ class DrainSprayingScreen(QWidget):
     def _set_last_full_sync(self, ts: float) -> None:
         settings = self.store.load_settings()
         settings[self._full_sync_key()] = int(ts)
+        self.store.save_settings(settings)
+
+    def _get_last_change_sync(self) -> str:
+        settings = self.store.load_settings()
+        return str(settings.get(self._change_sync_key(), "1970-01-01 00:00:00"))
+
+    def _set_last_change_sync(self, stamp: str) -> None:
+        settings = self.store.load_settings()
+        settings[self._change_sync_key()] = stamp
         self.store.save_settings(settings)
 
     def _can_sync_now(self) -> bool:
@@ -415,19 +427,22 @@ class DrainSprayingScreen(QWidget):
             full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
 
             if full_sync_due:
-                completed_jobs = client.list_jobs(module="drain", completed=True)
-                for j in completed_jobs:
+                since = self._get_last_change_sync()
+                changed_jobs = client.changes(since=since)
+                for j in changed_jobs:
+                    if j.get("module") != "drain":
+                        continue
                     job_key = j.get("job_key") or ""
                     if not job_key:
                         continue
                     rec = self.state_store.get(job_key) or {}
                     if rec.get("_dirty"):
                         continue
-                    rec["completed"] = True
+                    completed_val = j.get("completed")
+                    if completed_val is not None:
+                        rec["completed"] = bool(int(completed_val))
                     if j.get("invoiced") is not None:
-                        server_invoiced = bool(int(j.get("invoiced")))
-                        if server_invoiced or not bool(rec.get("invoiced")):
-                            rec["invoiced"] = server_invoiced
+                        rec["invoiced"] = bool(int(j.get("invoiced")))
                     if j.get("current_work") is not None:
                         rec["current_work"] = bool(int(j.get("current_work")))
                     if j.get("invoiced_at"):
@@ -442,6 +457,8 @@ class DrainSprayingScreen(QWidget):
                     rec["module"] = "drain"
                     if j.get("completed_at"):
                         rec["completed_at"] = j.get("completed_at")
+                    elif completed_val is not None and not bool(int(completed_val)):
+                        rec.pop("completed_at", None)
                     meta = rec.get("meta") or {}
                     raw_meta = j.get("meta")
                     if isinstance(raw_meta, str) and raw_meta.strip():
@@ -463,6 +480,7 @@ class DrainSprayingScreen(QWidget):
                     )
                     rec["meta"] = meta
                     self.state_store.upsert(job_key, rec)
+                self._set_last_change_sync(client.utc_now_mysql())
 
             jobs_payload = []
             dirty_keys = set()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import requests
 import time
+from datetime import datetime, timezone
 
 
 class FieldSyncClient:
@@ -75,6 +76,18 @@ class FieldSyncClient:
             return []
         jobs = data.get("jobs") or []
         return jobs if isinstance(jobs, list) else []
+
+    def changes(self, *, since: str) -> List[Dict[str, Any]]:
+        params: Dict[str, Any] = {"since": since}
+        data = self._request("GET", "changes", params=params)
+        if not isinstance(data, dict) or not data.get("ok"):
+            return []
+        jobs = data.get("jobs") or []
+        return jobs if isinstance(jobs, list) else []
+
+    @staticmethod
+    def utc_now_mysql() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     def _sync_jobs_get(self, jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
         ok_count = 0
