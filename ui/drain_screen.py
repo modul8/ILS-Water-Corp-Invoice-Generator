@@ -147,6 +147,7 @@ class DrainSprayingScreen(QWidget):
                 jobs = []
             if jobs:
                 self._load_from_server_jobs(jobs)
+                self._apply_spray_list_order(spray_list)
                 self._populate()
                 self._sync_with_server_async()
                 return
@@ -205,6 +206,26 @@ class DrainSprayingScreen(QWidget):
         
         self._sync_with_server_async()
         self._populate()
+
+    def _apply_spray_list_order(self, spray_list: str) -> None:
+        if not spray_list or not Path(spray_list).exists():
+            return
+        try:
+            ordered = load_spray_list(spray_list)
+        except Exception:
+            return
+
+        order_map: Dict[str, int] = {}
+        for idx, r in enumerate(ordered):
+            order_map[row_key(r)] = idx
+
+        def _sort_key(r: SprayRow) -> tuple[int, str]:
+            k = row_key(r)
+            if k in order_map:
+                return (order_map[k], k)
+            return (10**9, k)
+
+        self.rows.sort(key=_sort_key)
 
     def _load_from_server_jobs(self, jobs: list[dict]) -> None:
         self.rows = []
