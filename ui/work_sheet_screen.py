@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import List
+import logging
 from datetime import date
 import time
 
@@ -43,6 +44,7 @@ class WorkSheetScreen(QWidget):
         super().__init__()
         self.store = store
         self.state_store = StateStore(store)
+        self._log = logging.getLogger(__name__)
         self._sync_warned = False
         self._last_sync_attempt = 0.0
         self._min_sync_interval = 2.0
@@ -451,12 +453,14 @@ class WorkSheetScreen(QWidget):
         if not self._can_sync_now():
             return
         try:
+            self._log.info("sync_start module=%s", self.module_id)
             self.sync_status.emit("Syncing...")
             now = time.time()
             full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
 
             since = self._get_last_change_sync()
             changed_jobs = client.changes(since=since)
+            self._log.info("sync_changes module=%s since=%s count=%s", self.module_id, since, len(changed_jobs))
             max_updated = ""
             for j in changed_jobs:
                 if j.get("module") != self.module_id:
@@ -508,6 +512,12 @@ class WorkSheetScreen(QWidget):
                         dirty_keys.add(key)
 
             if jobs_payload:
+                self._log.info(
+                    "sync_push module=%s count=%s dirty=%s",
+                    self.module_id,
+                    len(jobs_payload),
+                    len(dirty_keys),
+                )
                 result = client.sync_jobs(jobs_payload)
                 if result.get("ok"):
                     for k in dirty_keys:
@@ -516,8 +526,10 @@ class WorkSheetScreen(QWidget):
                         self._set_last_full_sync(now)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
+            self._log.info("sync_done module=%s", self.module_id)
         except Exception:
             self.sync_status.emit("Sync failed")
+            self._log.exception("sync_failed module=%s", self.module_id)
 
     def _sync_completion(self, key: str, completed: bool, qty: float, completed_at: str) -> None:
         self._sync_dirty()

@@ -1,4 +1,7 @@
 import sys
+import logging
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPalette, QColor
 
@@ -6,6 +9,25 @@ from services.settings_store import SettingsStore
 from ui.shell import AppShell
 
 APP_VERSION = "2.1.0"
+
+
+def _configure_logging(app_dir: Path) -> None:
+    log_dir = app_dir / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "sync.log"
+
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    root.setLevel(logging.INFO)
+
+    handler = TimedRotatingFileHandler(
+        log_path, when="D", interval=1, backupCount=7, encoding="utf-8"
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    root.addHandler(handler)
 
 
 def apply_dark_palette(app: QApplication) -> None:
@@ -48,6 +70,7 @@ def main() -> None:
     apply_dark_palette(app)
 
     store = SettingsStore()
+    _configure_logging(store.app_dir)
     shell = AppShell(store, app_version=APP_VERSION)
     shell.show()
 

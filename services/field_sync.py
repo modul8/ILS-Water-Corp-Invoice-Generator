@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+import logging
 import requests
 import time
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ class FieldSyncClient:
             base = base[: -len("/api/index.php")]
         self.base_url = base.rstrip("/")
         self.api_key = (api_key or "").strip()
+        self._log = logging.getLogger(__name__)
 
     def _request(
         self,
@@ -48,12 +50,21 @@ class FieldSyncClient:
                 method, url, params=params, data=data, headers=headers, timeout=timeout
             )
         except Exception as e:
+            self._log.warning("request_failed action=%s method=%s err=%s", action, method, str(e)[:200])
             return {"ok": False, "error": "request_failed", "text": str(e)[:200]}
         if r.status_code >= 300:
+            self._log.warning(
+                "http_error action=%s method=%s status=%s body=%s",
+                action,
+                method,
+                r.status_code,
+                (r.text or "")[:200],
+            )
             return {"ok": False, "error": f"http_{r.status_code}", "text": (r.text or "")[:200]}
         try:
             return r.json()
         except Exception:
+            self._log.warning("bad_json action=%s method=%s body=%s", action, method, (r.text or "")[:200])
             return {"ok": False, "error": "bad_json", "text": (r.text or "")[:200]}
 
     def list_jobs(
@@ -73,16 +84,20 @@ class FieldSyncClient:
             params["invoiced"] = "1" if invoiced else "0"
         data = self._request("GET", "list", params=params)
         if not isinstance(data, dict) or not data.get("ok"):
+            self._log.info("list_jobs failed module=%s completed=%s invoiced=%s", module, completed, invoiced)
             return []
         jobs = data.get("jobs") or []
+        self._log.info("list_jobs ok count=%s module=%s completed=%s", len(jobs), module, completed)
         return jobs if isinstance(jobs, list) else []
 
     def changes(self, *, since: str) -> List[Dict[str, Any]]:
         params: Dict[str, Any] = {"since": since}
         data = self._request("GET", "changes", params=params)
         if not isinstance(data, dict) or not data.get("ok"):
+            self._log.info("changes failed since=%s", since)
             return []
         jobs = data.get("jobs") or []
+        self._log.info("changes ok count=%s since=%s", len(jobs), since)
         return jobs if isinstance(jobs, list) else []
 
     @staticmethod
@@ -130,11 +145,13 @@ class FieldSyncClient:
             return {"ok": True, "count": 0}
         r = self._request("POST", "sync_jobs", json_body={"jobs": jobs})
         if r.get("ok"):
+            self._log.info("sync_jobs ok count=%s method=post", len(jobs))
             return r
         if r.get("error", "").startswith("http_") or r.get("error") in {
             "request_failed",
             "bad_json",
         }:
+            self._log.warning("sync_jobs post failed, falling back to GET upserts")
             return self._sync_jobs_get(jobs)
         return r
 

@@ -3,6 +3,7 @@ from services.state_store import StateStore
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import logging
 import time
 
 from PySide6.QtCore import Qt, Signal
@@ -43,6 +44,7 @@ class DrainSprayingScreen(QWidget):
     def __init__(self, store: SettingsStore) -> None:
         super().__init__()
         self.store = store
+        self._log = logging.getLogger(__name__)
 
         self.state_store = StateStore(self.store)
         self._sync_warned = False
@@ -422,12 +424,14 @@ class DrainSprayingScreen(QWidget):
         if not self._can_sync_now():
             return
         try:
+            self._log.info("sync_start module=drain")
             self.sync_status.emit("Syncing...")
             now = time.time()
             full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
 
             since = self._get_last_change_sync()
             changed_jobs = client.changes(since=since)
+            self._log.info("sync_changes module=drain since=%s count=%s", since, len(changed_jobs))
             max_updated = ""
             for j in changed_jobs:
                 if j.get("module") != "drain":
@@ -499,6 +503,7 @@ class DrainSprayingScreen(QWidget):
                         dirty_keys.add(key)
 
             if jobs_payload:
+                self._log.info("sync_push module=drain count=%s dirty=%s", len(jobs_payload), len(dirty_keys))
                 result = client.sync_jobs(jobs_payload)
                 if result.get("ok"):
                     for k in dirty_keys:
@@ -507,8 +512,10 @@ class DrainSprayingScreen(QWidget):
                         self._set_last_full_sync(now)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
+            self._log.info("sync_done module=drain")
         except Exception:
             self.sync_status.emit("Sync failed")
+            self._log.exception("sync_failed module=drain")
 
     def _sync_dirty(self) -> None:
         client = self._get_sync_client()
