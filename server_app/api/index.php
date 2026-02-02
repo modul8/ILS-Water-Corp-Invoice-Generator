@@ -85,7 +85,11 @@ function latest_upload(string $prefix): string {
 
 function master_spray_list(array $cfg): string {
     $path = trim((string)($cfg["spray_list_master"] ?? ""));
-    if ($path !== "") return $path;
+    if ($path !== "" && file_exists($path)) return $path;
+    if ($path !== "" && !file_exists($path)) {
+        $latest = latest_upload("spray_list_");
+        if ($latest !== "") return $latest;
+    }
     return latest_upload("spray_list_");
 }
 
@@ -100,7 +104,7 @@ function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon
     try {
         $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
     } catch (Exception $e) {
-        return ["ok" => false, "error" => "spray_list_load_failed"];
+        return ["ok" => false, "error" => "spray_list_load_failed", "detail" => $e->getMessage()];
     }
 
     $ws = $spreadsheet->getSheetByName($sheet);
@@ -140,7 +144,7 @@ function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon
         $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, "Xlsx");
         $writer->save($path);
     } catch (Exception $e) {
-        return ["ok" => false, "error" => "spray_list_save_failed"];
+        return ["ok" => false, "error" => "spray_list_save_failed", "detail" => $e->getMessage()];
     }
 
     return ["ok" => true];
@@ -213,6 +217,7 @@ if ($action === "update_pin" && $method === "POST") {
     $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
     if (!$pin_result["ok"]) {
         http_response_code(500);
+        $pin_result["path"] = $path;
         echo json_encode($pin_result);
         exit;
     }
