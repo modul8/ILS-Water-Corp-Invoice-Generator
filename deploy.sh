@@ -8,6 +8,7 @@ rsync -av --delete \
   --no-times --omit-dir-times --no-perms --no-owner --no-group \
   --exclude 'config.php' \
   --exclude 'assets/' \
+  --exclude 'uploads/' \
   "$SRC_DIR" \
   "$DEST_DIR"
 
