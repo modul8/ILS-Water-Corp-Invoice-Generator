@@ -199,6 +199,7 @@ async function loadJobs() {
       let qtyVal = j.qty || j.qty_default || "";
       const unit = (j.unit || "").toLowerCase();
       const suffix = unitSuffix(unit);
+      const isDrain = (j.module || "").toLowerCase() === "drain";
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
       const html = `
@@ -207,7 +208,7 @@ async function loadJobs() {
         <div class="module">${jobTypeLabel(j.module)}</div>
         <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"}</div>
         <div class="row">
-          <input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}">
+          <input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}" ${isDrain ? "disabled" : ""}>
           <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
         </div>
       </div>

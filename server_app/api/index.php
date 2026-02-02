@@ -24,7 +24,17 @@ if (get_api_key() !== ($cfg["api_key"] ?? "")) {
 }
 
 try {
-    $dsn = "mysql:host=" . $cfg["db_host"] . ";dbname=" . $cfg["db_name"] . ";charset=utf8mb4";
+$db_host = (string)($cfg["db_host"] ?? "localhost");
+$db_port = (string)($cfg["db_port"] ?? "");
+if (strpos($db_host, ":") !== false && $db_port === "") {
+    $parts = explode(":", $db_host, 2);
+    $db_host = $parts[0];
+    $db_port = $parts[1];
+}
+$dsn = "mysql:host=" . $db_host . ";dbname=" . $cfg["db_name"] . ";charset=utf8mb4";
+if ($db_port !== "") {
+    $dsn .= ";port=" . $db_port;
+}
     $pdo = new PDO($dsn, $cfg["db_user"], $cfg["db_pass"], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     ]);
@@ -213,15 +223,32 @@ if ($action === "complete" && $method === "POST") {
     $completed = isset($body["completed"]) ? (int)!!$body["completed"] : 1;
     $qty = isset($body["qty"]) ? $body["qty"] : null;
     $completed_at = isset($body["completed_at"]) ? $body["completed_at"] : date("Y-m-d");
+    $module = "";
+    $stmt = $pdo->prepare("SELECT module FROM jobs WHERE job_key = :job_key");
+    $stmt->execute([":job_key" => $job_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row && isset($row["module"])) {
+        $module = (string)$row["module"];
+    }
 
-    $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        ":completed" => $completed,
-        ":completed_at" => $completed ? $completed_at : null,
-        ":qty" => $qty,
-        ":job_key" => $job_key,
-    ]);
+    if ($module === "drain") {
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at WHERE job_key = :job_key";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ":completed" => $completed,
+            ":completed_at" => $completed ? $completed_at : null,
+            ":job_key" => $job_key,
+        ]);
+    } else {
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ":completed" => $completed,
+            ":completed_at" => $completed ? $completed_at : null,
+            ":qty" => $qty,
+            ":job_key" => $job_key,
+        ]);
+    }
     echo json_encode(["ok" => true]);
     exit;
 }
@@ -236,15 +263,32 @@ if ($action === "complete" && $method === "GET") {
     $completed = isset($_GET["completed"]) ? (int)$_GET["completed"] : 1;
     $qty = isset($_GET["qty"]) ? $_GET["qty"] : null;
     $completed_at = isset($_GET["completed_at"]) ? $_GET["completed_at"] : date("Y-m-d");
+    $module = "";
+    $stmt = $pdo->prepare("SELECT module FROM jobs WHERE job_key = :job_key");
+    $stmt->execute([":job_key" => $job_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row && isset($row["module"])) {
+        $module = (string)$row["module"];
+    }
 
-    $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        ":completed" => $completed,
-        ":completed_at" => $completed ? $completed_at : null,
-        ":qty" => $qty,
-        ":job_key" => $job_key,
-    ]);
+    if ($module === "drain") {
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at WHERE job_key = :job_key";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ":completed" => $completed,
+            ":completed_at" => $completed ? $completed_at : null,
+            ":job_key" => $job_key,
+        ]);
+    } else {
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ":completed" => $completed,
+            ":completed_at" => $completed ? $completed_at : null,
+            ":qty" => $qty,
+            ":job_key" => $job_key,
+        ]);
+    }
     echo json_encode(["ok" => true]);
     exit;
 }
