@@ -3,6 +3,11 @@
   "description": "Server-side API and web UI for ILS Water Corp Invoice Generator.",
   "type": "project",
   "require": {
-    "phpoffice/phpspreadsheet": "^2.3"
+    "phpoffice/phpspreadsheet": "^2.2"
+  },
+  "config": {
+    "platform": {
+      "php": "8.2.30"
+    }
   }
 }
