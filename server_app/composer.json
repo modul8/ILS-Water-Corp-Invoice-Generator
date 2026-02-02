@@ -1,0 +1,8 @@
+{
+  "name": "modul8/ils-water-corp-server-app",
+  "description": "Server-side API and web UI for ILS Water Corp Invoice Generator.",
+  "type": "project",
+  "require": {
+    "phpoffice/phpspreadsheet": "^2.3"
+  }
+}
