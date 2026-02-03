@@ -56,7 +56,7 @@ if [ -d "$DEST_DIR/assets" ]; then
 fi
 if [ -d "$DEST_DIR/uploads" ]; then
   chmod 755 "$DEST_DIR/uploads" || warn "chmod failed on $DEST_DIR/uploads"
-  chmod -R o+rX "$DEST_DIR/uploads" || warn "chmod failed on $DEST_DIR/uploads (recursive)"
+  chmod -R u+rwX,go+rX "$DEST_DIR/uploads" || warn "chmod failed on $DEST_DIR/uploads (recursive)"
 fi
 
 # Sync assets separately so upgrades can refresh them while still keeping config.php.
