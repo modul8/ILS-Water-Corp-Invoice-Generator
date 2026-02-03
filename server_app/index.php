@@ -205,11 +205,22 @@ async function loadJobs() {
     return;
   }
     jobs.forEach(j => {
-      let qtyVal = j.qty || j.qty_default || "";
+      let metaObj = {};
+      if (j.meta) {
+        try { metaObj = JSON.parse(j.meta); } catch (e) { metaObj = {}; }
+      }
+      let qtyVal = j.qty;
       const unit = (j.unit || "").toLowerCase();
       const suffix = unitSuffix(unit);
       const isKm = unit === "km";
       const isDrain = (j.module || "").toLowerCase() === "drain";
+      const qtyIsZero = qtyVal === 0 || qtyVal === "0" || qtyVal === "0.00";
+      if (qtyVal === null || qtyVal === "" || qtyVal === undefined || (isKm && qtyIsZero)) {
+        qtyVal = j.qty_default;
+      }
+      if (qtyVal === null || qtyVal === "" || qtyVal === undefined) {
+        qtyVal = metaObj.qty_km ?? metaObj.qty ?? "";
+      }
       const showPin = true;
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";

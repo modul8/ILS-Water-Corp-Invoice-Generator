@@ -398,11 +398,11 @@ class WorkSheetScreen(QWidget):
                         if lat_val and lon_val:
                             safe_label = QUrl.toPercentEncoding(label).data().decode("utf-8")
                             if safe_label:
-                                query = f"q={safe_label}&ll={lat_val},{lon_val}&z=17"
+                                query = f"{lat_val},{lon_val} ({label})"
                             else:
-                                query = f"q={lat_val},{lon_val}&ll={lat_val},{lon_val}&z=17"
-                            url = QUrl("https://maps.google.com/maps")
-                            url.setQuery(query)
+                                query = f"{lat_val},{lon_val}"
+                            url = QUrl("https://www.google.com/maps/search/")
+                            url.setQuery(f"api=1&query={QUrl.toPercentEncoding(query).data().decode('utf-8')}")
                             QDesktopServices.openUrl(url)
             return
 
