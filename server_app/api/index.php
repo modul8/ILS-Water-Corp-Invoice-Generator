@@ -289,6 +289,33 @@ if ($action === "list" && $method === "GET") {
     exit;
 }
 
+if ($action === "search_item" && $method === "GET") {
+    $q = isset($_GET["q"]) ? trim($_GET["q"]) : "";
+    $module = isset($_GET["module"]) ? trim($_GET["module"]) : "";
+    $limit = isset($_GET["limit"]) ? intval($_GET["limit"]) : 20;
+    if ($limit <= 0 || $limit > 200) $limit = 20;
+    if ($q === "") {
+        echo json_encode(["ok" => true, "jobs" => []]);
+        exit;
+    }
+
+    $sql = "SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
+            FROM jobs
+            WHERE item LIKE :q";
+    $params = [":q" => "%" . $q . "%"];
+    if ($module !== "") {
+        $sql .= " AND module = :module";
+        $params[":module"] = $module;
+    }
+    $sql .= " ORDER BY updated_at DESC LIMIT " . $limit;
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(["ok" => true, "jobs" => $rows]);
+    exit;
+}
+
 if ($action === "update_pin" && $method === "POST") {
     $body = form_or_json();
     $job_key = isset($body["job_key"]) ? trim($body["job_key"]) : "";
