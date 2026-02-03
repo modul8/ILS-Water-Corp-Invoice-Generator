@@ -315,7 +315,7 @@ if ($action === "list" && $method === "GET") {
     if ($where) {
         $sql .= " WHERE " . implode(" AND ", $where);
     }
-    $sql .= " ORDER BY updated_at DESC LIMIT " . $limit;
+    $sql .= " ORDER BY module, sheet, item, work_order, job_key LIMIT " . $limit;
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
