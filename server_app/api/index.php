@@ -348,15 +348,25 @@ if ($action === "update_pin" && $method === "POST") {
     $drain = isset($body["drain"]) && $body["drain"] !== "" ? trim((string)$body["drain"]) : ($parts[2] ?? "");
 
     $path = master_spray_list($cfg);
-    if (strtolower((string)($job["module"] ?? "")) === "drain") {
-        if ($sheet === "" || $drain === "") {
-            http_response_code(400);
-            echo json_encode(["ok" => false, "error" => "missing_sheet_or_drain"]);
-            exit;
+    try {
+        if (strtolower((string)($job["module"] ?? "")) === "drain") {
+            if ($sheet === "" || $drain === "") {
+                http_response_code(400);
+                echo json_encode(["ok" => false, "error" => "missing_sheet_or_drain"]);
+                exit;
+            }
+            $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
+        } else {
+            $pin_result = update_module_pin($path, module_sheet_name((string)($job["module"] ?? "")), $job);
         }
-        $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
-    } else {
-        $pin_result = update_module_pin($path, module_sheet_name((string)($job["module"] ?? "")), $job);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "pin_update_exception", "detail" => $e->getMessage(), "path" => $path]);
+        exit;
+    } catch (Error $e) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "pin_update_error", "detail" => $e->getMessage(), "path" => $path]);
+        exit;
     }
     if (!$pin_result["ok"]) {
         http_response_code(500);
