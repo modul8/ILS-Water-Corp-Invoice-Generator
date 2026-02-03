@@ -374,7 +374,7 @@ class DrainSprayingScreen(QWidget):
                 pin_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 pin_item.setTextAlignment(Qt.AlignCenter)
                 pin_item.setToolTip(f"{lat}, {lon}")
-                pin_item.setData(Qt.UserRole, f"{lat},{lon}")
+                pin_item.setData(Qt.UserRole, f"{drain}|{lat},{lon}")
                 self.table.setItem(row, 9, pin_item)
 
             current_item = QTableWidgetItem()
@@ -447,11 +447,13 @@ class DrainSprayingScreen(QWidget):
             pin_item = self.table.item(row, 9)
             if pin_item:
                 data = pin_item.data(Qt.UserRole) or ""
-                if isinstance(data, str) and "," in data:
-                    lat_val, lon_val = [v.strip() for v in data.split(",", 1)]
-                    if lat_val and lon_val:
-                        q = f"{lat_val},{lon_val}"
-                        QDesktopServices.openUrl(QUrl(f"https://maps.google.com/?q={q}"))
+                if isinstance(data, str) and "|" in data:
+                    label, coords = data.split("|", 1)
+                    if "," in coords:
+                        lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
+                        if lat_val and lon_val:
+                            q = f"{label} {lat_val},{lon_val}".strip()
+                            QDesktopServices.openUrl(QUrl(f"https://maps.google.com/?q={q}"))
         return
 
     def _on_double_click(self, row: int, col: int) -> None:
