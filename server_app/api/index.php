@@ -112,7 +112,8 @@ function ensure_sheet_with_headers($spreadsheet, string $sheetName, array $heade
     if ($a1 === "") {
         $col = 1;
         foreach ($headers as $h) {
-            $ws->setCellValueByColumnAndRow($col, 1, $h);
+            $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . "1";
+            $ws->setCellValue($cell, $h);
             $col++;
         }
     }
@@ -239,7 +240,8 @@ function update_module_pin(string $path, string $sheet, array $job): array {
 
     $col = 1;
     foreach ($headers as $h) {
-        $ws->setCellValueByColumnAndRow($col, $targetRow, $rowData[$h]);
+        $cell = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . (string)$targetRow;
+        $ws->setCellValue($cell, $rowData[$h]);
         $col++;
     }
 
