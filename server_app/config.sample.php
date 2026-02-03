@@ -10,4 +10,6 @@ return [
     # Full path to master Spray List XLSX on the server (optional).
     # If blank, the API will use the latest spray_list_*.xlsx in /app/uploads.
     "spray_list_master" => "",
+    # Path to change log file on the server.
+    "change_log_path" => "/app/uploads/ils_app_changes.log",
 ];
