@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 import logging
 import time
 
-from PySide6.QtCore import Qt, Signal, QUrl, QUrlQuery
+from PySide6.QtCore import Qt, Signal, QUrl, QSize
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QInputDialog
@@ -96,6 +96,7 @@ class DrainSprayingScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
+        self.table.setIconSize(QSize(48, 48))
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.cellClicked.connect(self._on_click)
@@ -376,6 +377,7 @@ class DrainSprayingScreen(QWidget):
                 pin_item.setToolTip(f"{lat}, {lon}")
                 pin_item.setData(Qt.UserRole, f"{drain}|{lat},{lon}")
                 self.table.setItem(row, 9, pin_item)
+                self.table.setRowHeight(row, 52)
 
             current_item = QTableWidgetItem()
             current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
@@ -453,9 +455,9 @@ class DrainSprayingScreen(QWidget):
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
                             safe_label = QUrl.toPercentEncoding(label).data().decode("utf-8")
-                            url = QUrl(
-                                f"https://www.google.com/maps/place/{safe_label}/@{lat_val},{lon_val},17z"
-                            )
+                            query = f"{lat_val},{lon_val} ({label})".strip()
+                            url = QUrl("https://www.google.com/maps")
+                            url.setQuery(f"q={QUrl.toPercentEncoding(query).data().decode('utf-8')}")
                             QDesktopServices.openUrl(url)
         return
 
