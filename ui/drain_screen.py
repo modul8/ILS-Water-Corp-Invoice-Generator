@@ -11,10 +11,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QInputDialog
 )
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 from datetime import date
 
 from services.settings_store import SettingsStore
+import sys
 from services.field_sync import FieldSyncClient
 import threading
 import json
@@ -207,6 +208,13 @@ class DrainSprayingScreen(QWidget):
         self._sync_with_server_async()
         self._populate()
 
+    def _asset_path(self, filename: str) -> Path | None:
+        try:
+            base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+            return base / "assets" / filename
+        except Exception:
+            return None
+
     def _apply_spray_list_order(self, spray_list: str) -> None:
         if not spray_list or not Path(spray_list).exists():
             return
@@ -357,7 +365,12 @@ class DrainSprayingScreen(QWidget):
                 self.table.setItem(row, c, item)
 
             if pin_text:
-                pin_item = QTableWidgetItem("📍")
+                pin_item = QTableWidgetItem("")
+                icon_path = self._asset_path("gps.png")
+                if icon_path and icon_path.exists():
+                    pin_item.setIcon(QIcon(str(icon_path)))
+                else:
+                    pin_item.setText("📍")
                 pin_item.setTextAlignment(Qt.AlignCenter)
                 pin_item.setToolTip(f"{lat}, {lon}")
                 pin_item.setData(Qt.UserRole, (lat, lon))
