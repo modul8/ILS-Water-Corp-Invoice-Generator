@@ -327,15 +327,6 @@ if ($action === "update_pin" && $method === "POST") {
         exit;
     }
 
-    $parts = explode("|", $job_key, 3);
-    $sheet = isset($body["sheet"]) && $body["sheet"] !== "" ? trim((string)$body["sheet"]) : ($parts[0] ?? "");
-    $drain = isset($body["drain"]) && $body["drain"] !== "" ? trim((string)$body["drain"]) : ($parts[2] ?? "");
-    if ($sheet === "" || $drain === "") {
-        http_response_code(400);
-        echo json_encode(["ok" => false, "error" => "missing_sheet_or_drain"]);
-        exit;
-    }
-
     $stmt = $pdo->prepare("UPDATE jobs SET lat = :lat, lon = :lon WHERE job_key = :job_key");
     $stmt->execute([
         ":lat" => $lat === "" ? null : $lat,
@@ -352,8 +343,17 @@ if ($action === "update_pin" && $method === "POST") {
         exit;
     }
 
+    $parts = explode("|", $job_key, 3);
+    $sheet = isset($body["sheet"]) && $body["sheet"] !== "" ? trim((string)$body["sheet"]) : ($parts[0] ?? "");
+    $drain = isset($body["drain"]) && $body["drain"] !== "" ? trim((string)$body["drain"]) : ($parts[2] ?? "");
+
     $path = master_spray_list($cfg);
     if (strtolower((string)($job["module"] ?? "")) === "drain") {
+        if ($sheet === "" || $drain === "") {
+            http_response_code(400);
+            echo json_encode(["ok" => false, "error" => "missing_sheet_or_drain"]);
+            exit;
+        }
         $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
     } else {
         $pin_result = update_module_pin($path, module_sheet_name((string)($job["module"] ?? "")), $job);
