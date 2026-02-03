@@ -394,12 +394,10 @@ class WorkSheetScreen(QWidget):
                     if "," in coords:
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
-                            url = QUrl("https://www.google.com/maps")
-                            query = QUrlQuery()
-                            # Prefer coordinates to avoid Google resolving label to the wrong place.
-                            query.addQueryItem("q", f"{lat_val},{lon_val}")
-                            query.addQueryItem("z", "17")
-                            url.setQuery(query)
+                            safe_label = QUrl.toPercentEncoding(label).data().decode("utf-8")
+                            url = QUrl(
+                                f"https://www.google.com/maps/place/{safe_label}/@{lat_val},{lon_val},17z"
+                            )
                             QDesktopServices.openUrl(url)
             return
 
