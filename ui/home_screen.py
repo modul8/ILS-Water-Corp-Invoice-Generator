@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt
 
 from services.settings_store import SettingsStore
 
@@ -16,27 +18,34 @@ class HomeScreen(QWidget):
         self.reload_all = reload_all
 
         root = QVBoxLayout(self)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(12)
 
-        title = QLabel("Home")
-        title.setStyleSheet("font-size: 22px; font-weight: 800; color: #222;")
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignCenter)
+        logo_path = Path("assets") / "ILS LOGO.png"
+        if logo_path.exists():
+            pix = QPixmap(str(logo_path))
+            if not pix.isNull():
+                logo.setPixmap(pix.scaledToWidth(360, Qt.SmoothTransformation))
+        root.addWidget(logo, 0, Qt.AlignCenter)
+
+        title = QLabel("Water Corporation Job Planning and Invoicing")
+        title.setAlignment(Qt.AlignCenter)
+        title.setWordWrap(True)
+        title.setStyleSheet("font-size: 28px; font-weight: 800; color: #111;")
         root.addWidget(title)
+
+        subtitle = QLabel("ILS Water Corp Invoice Console")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet("font-size: 14px; color: #666;")
+        root.addWidget(subtitle)
 
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        self.status.setStyleSheet("color:#444; font-size: 14px;")
+        self.status.setStyleSheet("color:#444; font-size: 13px;")
+        self.status.setAlignment(Qt.AlignCenter)
         root.addWidget(self.status)
-
-        btn_row = QHBoxLayout()
-        btn_settings = QPushButton("Open Settings…")
-        btn_settings.clicked.connect(self.open_settings)
-
-        btn_reload = QPushButton("Reload Data")
-        btn_reload.clicked.connect(self.reload_all)
-
-        btn_row.addWidget(btn_settings)
-        btn_row.addWidget(btn_reload)
-        btn_row.addStretch(1)
-        root.addLayout(btn_row)
 
         root.addStretch(1)
         self.reload_from_settings()

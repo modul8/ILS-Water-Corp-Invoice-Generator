@@ -8,6 +8,7 @@ a = Analysis(
     datas=[
         ('assets\\ILS_WC.png', 'assets'),
         ('assets\\gps.png', 'assets'),
+        ('assets\\ILS LOGO.png', 'assets'),
     ],
     hiddenimports=[],
     hookspath=[],
