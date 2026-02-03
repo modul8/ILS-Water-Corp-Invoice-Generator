@@ -11,6 +11,7 @@ warn() { echo "[deploy][warn] $*" >&2; }
 log "Syncing app files from $SRC_DIR to $DEST_DIR"
 rsync -av --delete \
   --no-times --omit-dir-times --no-perms --no-owner --no-group \
+  --chmod=Du=rwx,Dg=rx,Do=rx,Fu=rw,Fg=r,Fo=r \
   --exclude 'config.php' \
   --exclude 'assets/' \
   --exclude 'uploads/' \
@@ -39,11 +40,27 @@ else
   warn "Vendor directory not found at $DEST_DIR/vendor"
 fi
 
+# Normalize perms for web-readability, including config.php (excluded from rsync).
+if [ -f "$DEST_DIR/index.php" ]; then
+  chmod 644 "$DEST_DIR/index.php" || warn "chmod failed on $DEST_DIR/index.php"
+fi
+if [ -f "$DEST_DIR/api/index.php" ]; then
+  chmod 644 "$DEST_DIR/api/index.php" || warn "chmod failed on $DEST_DIR/api/index.php"
+fi
+if [ -f "$DEST_DIR/config.php" ]; then
+  chmod 644 "$DEST_DIR/config.php" || warn "chmod failed on $DEST_DIR/config.php"
+fi
+if [ -d "$DEST_DIR/assets" ]; then
+  chmod 755 "$DEST_DIR/assets" || warn "chmod failed on $DEST_DIR/assets"
+  chmod -R o+rX "$DEST_DIR/assets" || warn "chmod failed on $DEST_DIR/assets (recursive)"
+fi
+
 # Sync assets separately so upgrades can refresh them while still keeping config.php.
 if [ -d "$SRC_DIR/assets" ]; then
   log "Syncing assets"
   rsync -av --delete \
     --no-times --omit-dir-times --no-perms --no-owner --no-group \
+    --chmod=Du=rwx,Dg=rx,Do=rx,Fu=rw,Fg=r,Fo=r \
     "$SRC_DIR/assets/" \
     "$DEST_DIR/assets/"
   log "Assets sync complete"
