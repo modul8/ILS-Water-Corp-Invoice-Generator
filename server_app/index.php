@@ -127,8 +127,8 @@ function unitSuffix(unit) {
 
 function mapLink(label, lat, lon) {
   if (lat === null || lon === null || lat === "" || lon === "") return "";
-  const q = encodeURIComponent(`${label || ""} @${lat},${lon}`);
-  const url = `https://maps.google.com/?q=${q}`;
+  const q = encodeURIComponent(`${lat},${lon}`);
+  const url = `https://www.google.com/maps/search/?api=1&query=${q}`;
   return `<a class="map-link" href="${url}" target="_blank" rel="noopener" title="Open Map"><img src="assets/gps.png" alt="Map"></a>`;
 }
 

@@ -320,6 +320,34 @@ if ($action === "list" && $method === "GET") {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as &$row) {
+        $unit = strtolower((string)($row["unit"] ?? ""));
+        $meta = [];
+        $raw_meta = $row["meta"] ?? null;
+        if (is_array($raw_meta)) {
+            $meta = $raw_meta;
+        } elseif (is_string($raw_meta) && trim($raw_meta) !== "") {
+            $parsed = json_decode($raw_meta, true);
+            if (is_array($parsed)) {
+                $meta = $parsed;
+            }
+        }
+        if ($unit === "km") {
+            $qty_default = $row["qty_default"] ?? null;
+            $meta_km = $meta["qty_km"] ?? ($meta["qty"] ?? null);
+            if (($qty_default === null || (float)$qty_default <= 0) && $meta_km !== null && (float)$meta_km > 0) {
+                $row["qty_default"] = $meta_km;
+            }
+            if (($row["qty"] === null || (float)$row["qty"] <= 0) && $row["completed"]) {
+                if ($row["qty_default"] !== null && (float)$row["qty_default"] > 0) {
+                    $row["qty"] = $row["qty_default"];
+                } elseif ($meta_km !== null && (float)$meta_km > 0) {
+                    $row["qty"] = $meta_km;
+                }
+            }
+        }
+    }
+    unset($row);
     echo json_encode(["ok" => true, "jobs" => $rows]);
     exit;
 }
@@ -639,19 +667,43 @@ if ($action === "complete" && $method === "POST") {
     $qty = isset($body["qty"]) ? $body["qty"] : null;
     $completed_at = isset($body["completed_at"]) ? $body["completed_at"] : date("Y-m-d");
     $module = "";
-    $stmt = $pdo->prepare("SELECT module FROM jobs WHERE job_key = :job_key");
+    $unit = "";
+    $qty_default = null;
+    $meta = [];
+    $stmt = $pdo->prepare("SELECT module, unit, qty_default, meta FROM jobs WHERE job_key = :job_key");
     $stmt->execute([":job_key" => $job_key]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($row && isset($row["module"])) {
-        $module = (string)$row["module"];
+    if ($row) {
+        if (isset($row["module"])) $module = (string)$row["module"];
+        if (isset($row["unit"])) $unit = (string)$row["unit"];
+        if (isset($row["qty_default"])) $qty_default = $row["qty_default"];
+        $raw_meta = $row["meta"] ?? null;
+        if (is_array($raw_meta)) {
+            $meta = $raw_meta;
+        } elseif (is_string($raw_meta) && trim($raw_meta) !== "") {
+            $parsed = json_decode($raw_meta, true);
+            if (is_array($parsed)) $meta = $parsed;
+        }
+    }
+    if ($completed) {
+        $qty_num = ($qty === null || $qty === "") ? null : (is_numeric($qty) ? (float)$qty : null);
+        if ($qty_num === null || $qty_num <= 0) {
+            $meta_km = $meta["qty_km"] ?? ($meta["qty"] ?? null);
+            if ($qty_default !== null && is_numeric($qty_default) && (float)$qty_default > 0) {
+                $qty = $qty_default;
+            } elseif ($meta_km !== null && is_numeric($meta_km) && (float)$meta_km > 0) {
+                $qty = $meta_km;
+            }
+        }
     }
 
     if ($module === "drain") {
-        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at WHERE job_key = :job_key";
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ":completed" => $completed,
             ":completed_at" => $completed ? $completed_at : null,
+            ":qty" => $qty,
             ":job_key" => $job_key,
         ]);
     } else {
@@ -680,19 +732,43 @@ if ($action === "complete" && $method === "GET") {
     $qty = isset($_GET["qty"]) ? $_GET["qty"] : null;
     $completed_at = isset($_GET["completed_at"]) ? $_GET["completed_at"] : date("Y-m-d");
     $module = "";
-    $stmt = $pdo->prepare("SELECT module FROM jobs WHERE job_key = :job_key");
+    $unit = "";
+    $qty_default = null;
+    $meta = [];
+    $stmt = $pdo->prepare("SELECT module, unit, qty_default, meta FROM jobs WHERE job_key = :job_key");
     $stmt->execute([":job_key" => $job_key]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($row && isset($row["module"])) {
-        $module = (string)$row["module"];
+    if ($row) {
+        if (isset($row["module"])) $module = (string)$row["module"];
+        if (isset($row["unit"])) $unit = (string)$row["unit"];
+        if (isset($row["qty_default"])) $qty_default = $row["qty_default"];
+        $raw_meta = $row["meta"] ?? null;
+        if (is_array($raw_meta)) {
+            $meta = $raw_meta;
+        } elseif (is_string($raw_meta) && trim($raw_meta) !== "") {
+            $parsed = json_decode($raw_meta, true);
+            if (is_array($parsed)) $meta = $parsed;
+        }
+    }
+    if ($completed) {
+        $qty_num = ($qty === null || $qty === "") ? null : (is_numeric($qty) ? (float)$qty : null);
+        if ($qty_num === null || $qty_num <= 0) {
+            $meta_km = $meta["qty_km"] ?? ($meta["qty"] ?? null);
+            if ($qty_default !== null && is_numeric($qty_default) && (float)$qty_default > 0) {
+                $qty = $qty_default;
+            } elseif ($meta_km !== null && is_numeric($meta_km) && (float)$meta_km > 0) {
+                $qty = $meta_km;
+            }
+        }
     }
 
     if ($module === "drain") {
-        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at WHERE job_key = :job_key";
+        $sql = "UPDATE jobs SET completed = :completed, completed_at = :completed_at, qty = :qty WHERE job_key = :job_key";
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ":completed" => $completed,
             ":completed_at" => $completed ? $completed_at : null,
+            ":qty" => $qty,
             ":job_key" => $job_key,
         ]);
     } else {

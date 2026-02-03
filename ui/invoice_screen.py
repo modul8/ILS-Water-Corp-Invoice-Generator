@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Tuple
 from pathlib import Path
 from datetime import date
 import re
+import json
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog, QDateEdit,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QMessageBox, QInputDialog,
@@ -137,6 +138,7 @@ class InvoiceScreen(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        self._sync_changes()
         self.state_store = StateStore(self.store)
 
         if self.show_invoiced:
@@ -203,6 +205,100 @@ class InvoiceScreen(QWidget):
         self.table.resizeColumnsToContents()
         self._update_totals_label(totals_by_po)
         self._sync_view_state()
+
+    def _change_sync_key(self) -> str:
+        return "invoice_change_sync"
+
+    def _get_last_change_sync(self) -> str:
+        settings = self.store.load_settings()
+        return str(settings.get(self._change_sync_key(), "1970-01-01 00:00:00"))
+
+    def _set_last_change_sync(self, stamp: str) -> None:
+        settings = self.store.load_settings()
+        settings[self._change_sync_key()] = stamp
+        self.store.save_settings(settings)
+
+    def _get_sync_client(self) -> FieldSyncClient | None:
+        settings = self.store.load_settings()
+        base = (settings.get("field_api_base") or "").strip()
+        key = (settings.get("field_api_key") or "").strip()
+        if not base or not key:
+            return None
+        return FieldSyncClient(base, key)
+
+    def _sync_changes(self) -> None:
+        client = self._get_sync_client()
+        if not client:
+            return
+        since = self._get_last_change_sync()
+        try:
+            changed_jobs = client.changes(since=since)
+        except Exception:
+            return
+        max_updated = ""
+        for j in changed_jobs:
+            job_key = j.get("job_key") or ""
+            if not job_key:
+                continue
+            rec = self.state_store.get(job_key) or {}
+            if rec.get("_dirty"):
+                continue
+            completed_val = j.get("completed")
+            if completed_val is not None:
+                rec["completed"] = bool(int(completed_val))
+            if j.get("completed_at"):
+                rec["completed_at"] = j.get("completed_at")
+            elif completed_val is not None and not bool(int(completed_val)):
+                rec.pop("completed_at", None)
+            if j.get("invoiced") is not None:
+                rec["invoiced"] = bool(int(j.get("invoiced")))
+            if j.get("invoiced_at"):
+                rec["invoiced_at"] = j.get("invoiced_at")
+            qty = j.get("qty")
+            if qty is not None:
+                try:
+                    rec["qty"] = float(qty)
+                except Exception:
+                    rec["qty"] = qty
+            if j.get("qty_default") is not None:
+                rec["qty_default"] = j.get("qty_default")
+            if j.get("unit"):
+                rec["unit"] = j.get("unit")
+            if j.get("module"):
+                rec["module"] = j.get("module")
+            meta = rec.get("meta") or {}
+            raw_meta = j.get("meta")
+            if isinstance(raw_meta, str) and raw_meta.strip():
+                try:
+                    parsed = json.loads(raw_meta)
+                    if isinstance(parsed, dict):
+                        meta.update(parsed)
+                except Exception:
+                    pass
+            meta.update(
+                {
+                    "sheet": j.get("sheet") or meta.get("sheet") or "",
+                    "catchment": meta.get("catchment") or "",
+                    "area": meta.get("area") or "",
+                    "drain": j.get("item") or meta.get("drain") or "",
+                    "location": j.get("item") or meta.get("location") or "",
+                    "item": j.get("item") or meta.get("item") or "",
+                    "work_order": j.get("work_order") or meta.get("work_order") or "",
+                    "po": j.get("po") or meta.get("po") or "",
+                    "qty_km": j.get("qty_default") or rec.get("qty") or meta.get("qty_km") or meta.get("qty") or 0,
+                    "lat": j.get("lat") if j.get("lat") is not None else meta.get("lat"),
+                    "lon": j.get("lon") if j.get("lon") is not None else meta.get("lon"),
+                }
+            )
+            rec["meta"] = meta
+            self.state_store.upsert(job_key, rec)
+            updated_at = j.get("updated_at") or ""
+            if isinstance(updated_at, str) and updated_at > max_updated:
+                max_updated = updated_at
+        if max_updated:
+            self._set_last_change_sync(max_updated)
+        elif changed_jobs:
+            self._set_last_change_sync(client.utc_now_mysql())
 
     def _sync_view_state(self) -> None:
         if self.show_invoiced:
