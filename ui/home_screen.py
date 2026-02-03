@@ -41,6 +41,20 @@ class HomeScreen(QWidget):
         subtitle.setStyleSheet("font-size: 14px; color: #666;")
         root.addWidget(subtitle)
 
+        powered = QLabel("Powered by")
+        powered.setAlignment(Qt.AlignCenter)
+        powered.setStyleSheet("font-size: 12px; color: #777; margin-top: 8px;")
+        root.addWidget(powered)
+
+        powered_logo = QLabel()
+        powered_logo.setAlignment(Qt.AlignCenter)
+        powered_logo_path = Path("assets") / "RealTVSoftware.png"
+        if powered_logo_path.exists():
+            pix = QPixmap(str(powered_logo_path))
+            if not pix.isNull():
+                powered_logo.setPixmap(pix.scaledToWidth(220, Qt.SmoothTransformation))
+        root.addWidget(powered_logo, 0, Qt.AlignCenter)
+
         self.status = QLabel("")
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color:#444; font-size: 13px;")
