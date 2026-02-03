@@ -9,7 +9,7 @@ import time
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox,
-    QTableWidget, QTableWidgetItem, QAbstractItemView
+    QTableWidget, QTableWidgetItem, QAbstractItemView, QInputDialog
 )
 from datetime import date
 
@@ -87,9 +87,9 @@ class DrainSprayingScreen(QWidget):
 
         root.addLayout(header)
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 11)
         self.table.setHorizontalHeaderLabels([
-            "Sheet", "Catchment", "Drain", "KM", "WO", "PO", "Completed", "Invoiced", "Current"
+            "Sheet", "Catchment", "Drain", "KM", "WO", "PO", "Completed", "Invoiced", "Current", "Pin", "Edit"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -327,9 +327,24 @@ class DrainSprayingScreen(QWidget):
             drain = getattr(r, "drain", "")
             km = float(getattr(r, "qty_km", 0.0))
             invoiced = bool(rec.get("invoiced", False))
+            lat = rec.get("lat")
+            lon = rec.get("lon")
+            if lat in ("", None):
+                lat = getattr(r, "lat", None)
+            if lon in ("", None):
+                lon = getattr(r, "lon", None)
+            pin_text = ""
+            try:
+                if lat not in (None, "") and lon not in (None, ""):
+                    pin_text = f"{float(lat):.6f}, {float(lon):.6f}"
+            except Exception:
+                pin_text = ""
+
             values = [sheet, catchment, drain, f"{km:.2f}", wo, po,
                     "YES" if completed else "NO",
                     "YES" if invoiced else "NO",
+                    "",
+                    pin_text,
                     ""]
 
 
@@ -337,7 +352,7 @@ class DrainSprayingScreen(QWidget):
                 item = QTableWidgetItem(str(v))
                 if c == 6 and completed:
                     item.setForeground(Qt.darkGreen)
-                if c in (6, 7, 8):
+                if c in (6, 7, 8, 9, 10):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, c, item)
 
@@ -347,6 +362,10 @@ class DrainSprayingScreen(QWidget):
             current_item.setTextAlignment(Qt.AlignCenter)
             current_item.setData(Qt.UserRole, k)
             self.table.setItem(row, 8, current_item)
+
+            edit_btn = QPushButton("Edit")
+            edit_btn.clicked.connect(lambda _=False, key=k: self._edit_pin(key))
+            self.table.setCellWidget(row, 10, edit_btn)
 
         self.table.resizeColumnsToContents()
         self.table.blockSignals(False)
@@ -461,6 +480,38 @@ class DrainSprayingScreen(QWidget):
 
         self.state_store.upsert(k, existing)
         self.state_store.set_dirty(k, True)
+        self._sync_dirty_async()
+        self._populate()
+
+    def _edit_pin(self, key: str) -> None:
+        rec = self.state_store.get(key) or {}
+        meta = rec.get("meta") or {}
+        lat_val = rec.get("lat", meta.get("lat", ""))
+        lon_val = rec.get("lon", meta.get("lon", ""))
+
+        lat_str, ok = QInputDialog.getText(self, "Edit Pin", "Lat:", text=str(lat_val or ""))
+        if not ok:
+            return
+        lon_str, ok = QInputDialog.getText(self, "Edit Pin", "Lon:", text=str(lon_val or ""))
+        if not ok:
+            return
+
+        rec["lat"] = lat_str.strip()
+        rec["lon"] = lon_str.strip()
+        meta["lat"] = rec["lat"]
+        meta["lon"] = rec["lon"]
+        rec["meta"] = meta
+        rec.setdefault("module", "drain")
+
+        # Update in-memory row if present
+        for r in self.rows:
+            if row_key(r) == key:
+                r.lat = rec["lat"]
+                r.lon = rec["lon"]
+                break
+
+        self.state_store.upsert(key, rec)
+        self.state_store.set_dirty(key, True)
         self._sync_dirty_async()
         self._populate()
 

@@ -82,7 +82,7 @@ class WorkSheetScreen(QWidget):
 
         root.addLayout(header)
 
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 11)
         self.table.setHorizontalHeaderLabels(
             [
                 "WO",
@@ -93,10 +93,12 @@ class WorkSheetScreen(QWidget):
                 "Completed",
                 "Invoiced",
                 "Current",
+                "Pin",
+                "Edit",
                 "Key",
             ]
         )
-        self.table.setColumnHidden(8, True)
+        self.table.setColumnHidden(10, True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -227,6 +229,12 @@ class WorkSheetScreen(QWidget):
             rec["qty"] = j.get("qty")
             rec["unit"] = j.get("unit") or self.unit
             rec["current_work"] = bool(int(j.get("current_work") or 0))
+            if j.get("lat") is not None:
+                rec["lat"] = j.get("lat")
+                meta["lat"] = j.get("lat")
+            if j.get("lon") is not None:
+                rec["lon"] = j.get("lon")
+                meta["lon"] = j.get("lon")
             rec["meta"] = meta
             self.state_store.upsert(key, rec)
 
@@ -264,6 +272,19 @@ class WorkSheetScreen(QWidget):
             row = self.table.rowCount()
             self.table.insertRow(row)
 
+            lat = rec.get("lat")
+            lon = rec.get("lon")
+            if lat in ("", None):
+                lat = (rec.get("meta") or {}).get("lat")
+            if lon in ("", None):
+                lon = (rec.get("meta") or {}).get("lon")
+            pin_text = ""
+            try:
+                if lat not in (None, "") and lon not in (None, ""):
+                    pin_text = f"{float(lat):.6f}, {float(lon):.6f}"
+            except Exception:
+                pin_text = ""
+
             values = [
                 wo,
                 r.location,
@@ -272,6 +293,8 @@ class WorkSheetScreen(QWidget):
                 self.unit,
                 "YES" if completed else "NO",
                 "YES" if invoiced else "NO",
+                "",
+                pin_text,
                 "",
                 k,
             ]
@@ -282,7 +305,7 @@ class WorkSheetScreen(QWidget):
                     item.setForeground(Qt.green)
                 if c == 6 and invoiced:
                     item.setForeground(Qt.cyan)
-                if c in (5, 6, 7):
+                if c in (5, 6, 7, 8, 9):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, c, item)
 
@@ -291,6 +314,10 @@ class WorkSheetScreen(QWidget):
             current_item.setCheckState(Qt.Checked if current_work else Qt.Unchecked)
             current_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 7, current_item)
+
+            edit_btn = QPushButton("Edit")
+            edit_btn.clicked.connect(lambda _=False, key=k: self._edit_pin(key))
+            self.table.setCellWidget(row, 9, edit_btn)
 
         self.table.resizeColumnsToContents()
         self.table.blockSignals(False)
@@ -343,7 +370,7 @@ class WorkSheetScreen(QWidget):
             return
 
     def _toggle_completed(self, row: int) -> None:
-        k = self.table.item(row, 8).text()
+        k = self.table.item(row, 10).text()
         current = self.state_store.get(k) or {}
         completed_now = bool(current.get("completed", False))
 
@@ -406,7 +433,7 @@ class WorkSheetScreen(QWidget):
         self._populate()
 
     def _edit_qty(self, row: int) -> None:
-        k = self.table.item(row, 8).text()
+        k = self.table.item(row, 10).text()
         rec = self.state_store.get(k) or {}
         if not bool(rec.get("completed", False)):
             QMessageBox.information(
@@ -437,7 +464,7 @@ class WorkSheetScreen(QWidget):
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if item.column() != 7:
             return
-        key_item = self.table.item(item.row(), 8)
+        key_item = self.table.item(item.row(), 10)
         if not key_item:
             return
         k = key_item.text()
@@ -491,12 +518,20 @@ class WorkSheetScreen(QWidget):
         return True
 
     def _build_payload(self, r, rec: dict) -> dict:
+        lat = rec.get("lat")
+        lon = rec.get("lon")
+        if lat in (None, ""):
+            lat = (rec.get("meta") or {}).get("lat")
+        if lon in (None, ""):
+            lon = (rec.get("meta") or {}).get("lon")
         return {
             "job_key": row_key(self.module_id, self.sheet_name, r.wo),
             "module": self.module_id,
             "job_type": self.sheet_name,
             "sheet": self.sheet_name,
             "item": r.location,
+            "lat": lat,
+            "lon": lon,
             "work_order": r.wo,
             "po": r.po,
             "unit": self.unit,
@@ -511,8 +546,36 @@ class WorkSheetScreen(QWidget):
                 "location": r.location,
                 "call_date": r.call_date,
                 "sheet": self.sheet_name,
+                "lat": lat,
+                "lon": lon,
             },
         }
+
+    def _edit_pin(self, key: str) -> None:
+        rec = self.state_store.get(key) or {}
+        meta = rec.get("meta") or {}
+
+        lat_val = rec.get("lat", meta.get("lat", ""))
+        lon_val = rec.get("lon", meta.get("lon", ""))
+
+        lat_str, ok = QInputDialog.getText(self, "Edit Pin", "Lat:", text=str(lat_val or ""))
+        if not ok:
+            return
+        lon_str, ok = QInputDialog.getText(self, "Edit Pin", "Lon:", text=str(lon_val or ""))
+        if not ok:
+            return
+
+        rec["lat"] = lat_str.strip()
+        rec["lon"] = lon_str.strip()
+        meta["lat"] = rec["lat"]
+        meta["lon"] = rec["lon"]
+        rec["meta"] = meta
+        rec["module"] = rec.get("module") or self.module_id
+
+        self.state_store.upsert(key, rec)
+        self.state_store.set_dirty(key, True)
+        self._sync_dirty_async()
+        self._populate()
 
     def _sync_with_server(self) -> None:
         client = self._get_sync_client()
