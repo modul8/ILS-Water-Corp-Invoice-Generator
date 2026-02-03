@@ -6,11 +6,12 @@ from typing import Any, Dict, List, Tuple
 import logging
 import time
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QUrl
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QInputDialog
 )
+from PySide6.QtGui import QDesktopServices
 from datetime import date
 
 from services.settings_store import SettingsStore
@@ -355,6 +356,13 @@ class DrainSprayingScreen(QWidget):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, c, item)
 
+            if pin_text:
+                pin_item = QTableWidgetItem("📍")
+                pin_item.setTextAlignment(Qt.AlignCenter)
+                pin_item.setToolTip(f"{lat}, {lon}")
+                pin_item.setData(Qt.UserRole, (lat, lon))
+                self.table.setItem(row, 9, pin_item)
+
             current_item = QTableWidgetItem()
             current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             current_item.setCheckState(Qt.Checked if current_work else Qt.Unchecked)
@@ -421,6 +429,15 @@ class DrainSprayingScreen(QWidget):
         self._apply_filters()
 
     def _on_click(self, row: int, col: int) -> None:
+        if col == 9:
+            pin_item = self.table.item(row, 9)
+            if pin_item:
+                data = pin_item.data(Qt.UserRole)
+                if isinstance(data, tuple) and len(data) == 2:
+                    lat_val, lon_val = data
+                    if lat_val not in ("", None) and lon_val not in ("", None):
+                        q = f"{lat_val},{lon_val}"
+                        QDesktopServices.openUrl(QUrl(f"https://maps.google.com/?q={q}"))
         return
 
     def _on_double_click(self, row: int, col: int) -> None:
