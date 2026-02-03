@@ -397,9 +397,12 @@ class WorkSheetScreen(QWidget):
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
                             safe_label = QUrl.toPercentEncoding(label).data().decode("utf-8")
-                            query = f"{label} {lat_val},{lon_val}".strip()
-                            url = QUrl("https://www.google.com/maps/search/")
-                            url.setQuery(f"api=1&query={QUrl.toPercentEncoding(query).data().decode('utf-8')}")
+                            if safe_label:
+                                query = f"q={safe_label}&ll={lat_val},{lon_val}&z=17"
+                            else:
+                                query = f"q={lat_val},{lon_val}&ll={lat_val},{lon_val}&z=17"
+                            url = QUrl("https://maps.google.com/maps")
+                            url.setQuery(query)
                             QDesktopServices.openUrl(url)
             return
 
