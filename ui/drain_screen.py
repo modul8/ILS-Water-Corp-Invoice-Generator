@@ -455,9 +455,9 @@ class DrainSprayingScreen(QWidget):
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
                             safe_label = QUrl.toPercentEncoding(label).data().decode("utf-8")
-                            query = f"{lat_val},{lon_val} ({label})".strip()
-                            url = QUrl("https://www.google.com/maps")
-                            url.setQuery(f"q={QUrl.toPercentEncoding(query).data().decode('utf-8')}")
+                            query = f"{label} {lat_val},{lon_val}".strip()
+                            url = QUrl("https://www.google.com/maps/search/")
+                            url.setQuery(f"api=1&query={QUrl.toPercentEncoding(query).data().decode('utf-8')}")
                             QDesktopServices.openUrl(url)
         return
 
