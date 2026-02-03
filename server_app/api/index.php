@@ -665,6 +665,9 @@ if ($action === "complete" && $method === "POST") {
     }
     $completed = isset($body["completed"]) ? (int)!!$body["completed"] : 1;
     $qty = isset($body["qty"]) ? $body["qty"] : null;
+    if ($qty === "") {
+        $qty = null;
+    }
     $completed_at = isset($body["completed_at"]) ? $body["completed_at"] : date("Y-m-d");
     $module = "";
     $unit = "";
@@ -730,6 +733,9 @@ if ($action === "complete" && $method === "GET") {
     }
     $completed = isset($_GET["completed"]) ? (int)$_GET["completed"] : 1;
     $qty = isset($_GET["qty"]) ? $_GET["qty"] : null;
+    if ($qty === "") {
+        $qty = null;
+    }
     $completed_at = isset($_GET["completed_at"]) ? $_GET["completed_at"] : date("Y-m-d");
     $module = "";
     $unit = "";
