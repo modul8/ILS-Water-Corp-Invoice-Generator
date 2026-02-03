@@ -69,6 +69,9 @@ class InvoiceScreen(QWidget):
         self.btn_export_range = QPushButton("Export TXT\n(Date Range)")
         self.btn_export_range.clicked.connect(self.export_txt_date_range)
 
+        self.btn_show_invoiced = QPushButton("Show Invoiced")
+        self.btn_show_invoiced.clicked.connect(self.toggle_show_invoiced)
+
         self.btn_select_all = QPushButton("Select All")
         self.btn_select_all.clicked.connect(self.select_all)
 
@@ -78,6 +81,7 @@ class InvoiceScreen(QWidget):
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(self.btn_refresh)
+        header.addWidget(self.btn_show_invoiced)
         header.addWidget(self.btn_select_all)
         header.addWidget(self.btn_select_none)
         header.addWidget(self.btn_mark_invoiced)
@@ -123,6 +127,9 @@ class InvoiceScreen(QWidget):
         hint.setStyleSheet("color:#aaa;")
         hint.setWordWrap(True)
         root.addWidget(hint)
+        self.hint = hint
+
+        self.show_invoiced = False
 
         self.refresh()
 
@@ -132,12 +139,15 @@ class InvoiceScreen(QWidget):
     def refresh(self) -> None:
         self.state_store = StateStore(self.store)
 
-        pending = self.state_store.pending_to_invoice()
+        if self.show_invoiced:
+            records = [(k, rec) for k, rec in self.state_store.iter_records() if rec.get("invoiced") is True]
+        else:
+            records = self.state_store.pending_to_invoice()
         seen_keys: set[str] = set()
         totals_by_po: Dict[str, float] = {}
 
         self.table.setRowCount(0)
-        for key, rec in pending:
+        for key, rec in records:
             if key in seen_keys:
                 continue
             seen_keys.add(key)
@@ -192,6 +202,23 @@ class InvoiceScreen(QWidget):
 
         self.table.resizeColumnsToContents()
         self._update_totals_label(totals_by_po)
+        self._sync_view_state()
+
+    def _sync_view_state(self) -> None:
+        if self.show_invoiced:
+            self.btn_show_invoiced.setText("Show Pending")
+            self.btn_mark_invoiced.setEnabled(False)
+            self.btn_create.setEnabled(False)
+            self.hint.setText("Showing invoiced items.")
+        else:
+            self.btn_show_invoiced.setText("Show Invoiced")
+            self.btn_mark_invoiced.setEnabled(True)
+            self.btn_create.setEnabled(True)
+            self.hint.setText("Select rows and click Create Draft Invoice. Items must be Completed and not Invoiced.")
+
+    def toggle_show_invoiced(self) -> None:
+        self.show_invoiced = not self.show_invoiced
+        self.refresh()
 
     def _update_totals_label(self, totals_by_po: Dict[str, float]) -> None:
         if not totals_by_po:

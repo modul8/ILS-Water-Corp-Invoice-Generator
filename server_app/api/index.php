@@ -8,6 +8,7 @@ if (!file_exists($config_path)) {
     exit;
 }
 $cfg = require $config_path;
+$GLOBALS["CFG"] = $cfg;
 
 function get_api_key() {
     $headers = function_exists("getallheaders") ? getallheaders() : [];
@@ -80,6 +81,31 @@ function ensure_upload_dir(): string {
         @mkdir($dir, 0775, true);
     }
     return $dir;
+}
+
+function log_change(string $action, string $job_key, array $fields = []): void {
+    $cfg = $GLOBALS["CFG"] ?? [];
+    $log_path = $cfg["change_log_path"] ?? "/var/log/ils_app_changes.log";
+    $entry = [
+        "ts" => date("Y-m-d H:i:s"),
+        "action" => $action,
+        "job_key" => $job_key,
+        "ip" => $_SERVER["REMOTE_ADDR"] ?? "",
+        "ua" => $_SERVER["HTTP_USER_AGENT"] ?? "",
+    ];
+    foreach ($fields as $k => $v) {
+        $entry[$k] = $v;
+    }
+    $line = json_encode($entry, JSON_UNESCAPED_SLASHES);
+    if ($line === false) return;
+    @file_put_contents($log_path, $line . "\n", FILE_APPEND | LOCK_EX);
+}
+
+function fetch_job_fields(PDO $pdo, string $job_key): array {
+    $stmt = $pdo->prepare("SELECT completed, completed_at, invoiced, invoiced_at, qty, lat, lon FROM jobs WHERE job_key = :job_key");
+    $stmt->execute([":job_key" => $job_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return is_array($row) ? $row : [];
 }
 
 function latest_upload(string $prefix): string {
@@ -342,6 +368,7 @@ if ($action === "update_pin" && $method === "POST") {
         ":lon" => $lon === "" ? null : $lon,
         ":job_key" => $job_key,
     ]);
+    log_change("update_pin", $job_key, ["lat" => $lat, "lon" => $lon]);
 
     $stmt = $pdo->prepare("SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at FROM jobs WHERE job_key = :job_key");
     $stmt->execute([":job_key" => $job_key]);
@@ -441,8 +468,10 @@ if ($action === "sync_jobs" && $method === "POST") {
     try {
         foreach ($jobs as $j) {
             if (!isset($j["job_key"]) || !isset($j["module"])) continue;
+            $job_key = (string)$j["job_key"];
+            $before = fetch_job_fields($pdo, $job_key);
             $stmt->execute([
-                ":job_key" => $j["job_key"],
+                ":job_key" => $job_key,
                 ":module" => $j["module"],
                 ":job_type" => $j["job_type"] ?? "",
                 ":sheet" => $j["sheet"] ?? "",
@@ -461,6 +490,26 @@ if ($action === "sync_jobs" && $method === "POST") {
                 ":current_work" => isset($j["current_work"]) ? (int)$j["current_work"] : 0,
                 ":meta" => isset($j["meta"]) ? json_encode($j["meta"]) : null,
             ]);
+            $after = [
+                "completed" => isset($j["completed"]) ? (int)$j["completed"] : null,
+                "completed_at" => norm_date($j["completed_at"] ?? null),
+                "invoiced" => isset($j["invoiced"]) ? (int)$j["invoiced"] : null,
+                "invoiced_at" => norm_date($j["invoiced_at"] ?? null),
+                "qty" => isset($j["qty"]) ? $j["qty"] : null,
+                "lat" => $j["lat"] ?? null,
+                "lon" => $j["lon"] ?? null,
+            ];
+            $changed = [];
+            foreach ($after as $k => $v) {
+                if ($v === null) continue;
+                $prev = $before[$k] ?? null;
+                if ((string)$prev !== (string)$v) {
+                    $changed[$k] = ["from" => $prev, "to" => $v];
+                }
+            }
+            if ($changed) {
+                log_change("sync_jobs", $job_key, ["changes" => $changed]);
+            }
             $count++;
         }
     } catch (Exception $e) {
@@ -615,6 +664,7 @@ if ($action === "complete" && $method === "POST") {
             ":job_key" => $job_key,
         ]);
     }
+    log_change("complete", $job_key, ["completed" => $completed, "completed_at" => $completed ? $completed_at : null, "qty" => $qty]);
     echo json_encode(["ok" => true]);
     exit;
 }
@@ -655,6 +705,7 @@ if ($action === "complete" && $method === "GET") {
             ":job_key" => $job_key,
         ]);
     }
+    log_change("complete", $job_key, ["completed" => $completed, "completed_at" => $completed ? $completed_at : null, "qty" => $qty]);
     echo json_encode(["ok" => true]);
     exit;
 }
@@ -676,6 +727,7 @@ if ($action === "set_invoiced" && $method === "GET") {
         ":invoiced_at" => $invoiced ? $invoiced_at : null,
         ":job_key" => $job_key,
     ]);
+    log_change("set_invoiced", $job_key, ["invoiced" => $invoiced, "invoiced_at" => $invoiced ? $invoiced_at : null]);
     echo json_encode(["ok" => true]);
     exit;
 }
