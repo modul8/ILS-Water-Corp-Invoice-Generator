@@ -452,13 +452,13 @@ class DrainSprayingScreen(QWidget):
                     if "," in coords:
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
-                            url = QUrl("https://www.google.com/maps")
-                            query = QUrlQuery()
-                            query.addQueryItem("q", label)
-                            query.addQueryItem("ll", f"{lat_val},{lon_val}")
-                            query.addQueryItem("z", "17")
-                            url.setQuery(query)
-                            QDesktopServices.openUrl(url)
+                        url = QUrl("https://www.google.com/maps")
+                        query = QUrlQuery()
+                        # Prefer coordinates to avoid Google resolving label to the wrong place.
+                        query.addQueryItem("q", f"{lat_val},{lon_val}")
+                        query.addQueryItem("z", "17")
+                        url.setQuery(query)
+                        QDesktopServices.openUrl(url)
         return
 
     def _on_double_click(self, row: int, col: int) -> None:
