@@ -197,7 +197,6 @@ class DrainSprayingScreen(QWidget):
                             "po": getattr(r, "po", "") or "",
                         }
                     })
-                    self.state_store.set_dirty(k, True)
 
         else:
             self.rows = []
@@ -598,8 +597,6 @@ class DrainSprayingScreen(QWidget):
             self._log.info("sync_start module=drain")
             self.sync_status.emit("Syncing...")
             now = time.time()
-            full_sync_due = (now - self._get_last_full_sync()) >= self._full_sync_interval
-
             since = self._get_last_change_sync()
             changed_jobs = client.changes(since=since)
             self._log.info("sync_changes module=drain since=%s count=%s", since, len(changed_jobs))
@@ -670,7 +667,7 @@ class DrainSprayingScreen(QWidget):
             for r in self.rows:
                 key = row_key(r)
                 rec = self.state_store.get(key) or {}
-                if full_sync_due or rec.get("_dirty"):
+                if rec.get("_dirty"):
                     jobs_payload.append(self._build_payload(r, rec))
                     if rec.get("_dirty"):
                         dirty_keys.add(key)
@@ -681,8 +678,6 @@ class DrainSprayingScreen(QWidget):
                 if result.get("ok"):
                     for k in dirty_keys:
                         self.state_store.clear_dirty(k)
-                    if full_sync_due:
-                        self._set_last_full_sync(now)
             from datetime import datetime
             self.sync_status.emit(f"Last sync: {datetime.now().strftime('%H:%M')}")
             self._log.info("sync_done module=drain")
