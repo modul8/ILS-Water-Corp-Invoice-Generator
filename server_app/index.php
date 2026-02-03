@@ -214,12 +214,20 @@ async function loadJobs() {
       const suffix = unitSuffix(unit);
       const isKm = unit === "km";
       const isDrain = (j.module || "").toLowerCase() === "drain";
+      const metaKm = metaObj.qty_km ?? metaObj.qty ?? null;
       const qtyIsZero = qtyVal === 0 || qtyVal === "0" || qtyVal === "0.00";
-      if (qtyVal === null || qtyVal === "" || qtyVal === undefined || (isKm && qtyIsZero)) {
-        qtyVal = j.qty_default;
-      }
-      if (qtyVal === null || qtyVal === "" || qtyVal === undefined) {
-        qtyVal = metaObj.qty_km ?? metaObj.qty ?? "";
+      if (isKm) {
+        if (metaKm !== null && metaKm !== "" && Number(metaKm) > 0) {
+          qtyVal = metaKm;
+        } else if (j.qty_default !== null && j.qty_default !== "" && Number(j.qty_default) > 0) {
+          qtyVal = j.qty_default;
+        } else if (qtyVal === null || qtyVal === "" || qtyVal === undefined || qtyIsZero) {
+          qtyVal = j.qty_default ?? metaKm ?? "";
+        }
+      } else {
+        if (qtyVal === null || qtyVal === "" || qtyVal === undefined) {
+          qtyVal = j.qty_default ?? metaKm ?? "";
+        }
       }
       const showPin = true;
       const isCompleted = Number(j.completed || 0) === 1;
