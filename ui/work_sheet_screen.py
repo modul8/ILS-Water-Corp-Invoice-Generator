@@ -70,7 +70,7 @@ class WorkSheetScreen(QWidget):
         btn_refresh.clicked.connect(self.refresh)
         header.addWidget(btn_refresh)
 
-        self.btn_hide_completed = QPushButton("Hide Completed")
+        self.btn_hide_completed = QPushButton("Show Completed")
         self.btn_hide_completed.setCheckable(True)
         self.btn_hide_completed.toggled.connect(self._on_filter_toggle)
         header.addWidget(self.btn_hide_completed)
@@ -234,7 +234,7 @@ class WorkSheetScreen(QWidget):
         self.table.blockSignals(True)
         self.table.setRowCount(0)
 
-        hide_completed = self.btn_hide_completed.isChecked()
+        show_completed = self.btn_hide_completed.isChecked()
         hide_missing = self.btn_hide_missing.isChecked()
 
         for r in self.rows:
@@ -247,7 +247,9 @@ class WorkSheetScreen(QWidget):
             wo = r.wo or ""
             po = r.po or ""
 
-            if hide_completed and completed:
+            if show_completed and not completed:
+                continue
+            if not show_completed and completed:
                 continue
             if hide_missing and not wo and not po:
                 continue
@@ -315,7 +317,7 @@ class WorkSheetScreen(QWidget):
         if self.btn_hide_completed.isChecked():
             self.btn_hide_completed.setText("Show Completed")
         else:
-            self.btn_hide_completed.setText("Hide Completed")
+            self.btn_hide_completed.setText("Show Not Completed")
 
         if self.btn_hide_missing.isChecked():
             self.btn_hide_missing.setText("Show Missing PO/WO")
