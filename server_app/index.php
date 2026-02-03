@@ -210,6 +210,7 @@ async function loadJobs() {
       const suffix = unitSuffix(unit);
       const isKm = unit === "km";
       const isDrain = (j.module || "").toLowerCase() === "drain";
+      const showPin = true;
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
       const map = mapLink(j.item || "", j.lat, j.lon);
@@ -231,7 +232,7 @@ async function loadJobs() {
           <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
           ${qtyInput}
         </div>
-        ${isDrain ? `
+        ${showPin ? `
         <div class="row">
           <input type="number" step="0.000001" placeholder="Lat" value="${latVal}" id="lat-${j.job_key}">
           <input type="number" step="0.000001" placeholder="Lon" value="${lonVal}" id="lon-${j.job_key}">

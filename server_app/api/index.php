@@ -93,6 +93,32 @@ function master_spray_list(array $cfg): string {
     return latest_upload("spray_list_");
 }
 
+function module_sheet_name(string $module): string {
+    $m = strtolower(trim($module));
+    if ($m === "drain") return "Spray Drains";
+    if ($m === "weeds") return "Noxious Weeds";
+    if ($m === "tracks") return "Mtn Access Tracks";
+    if ($m === "fire") return "Fire Zones";
+    return $module !== "" ? $module : "Work Items";
+}
+
+function ensure_sheet_with_headers($spreadsheet, string $sheetName, array $headers) {
+    $ws = $spreadsheet->getSheetByName($sheetName);
+    if ($ws === null) {
+        $ws = new \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet($spreadsheet, $sheetName);
+        $spreadsheet->addSheet($ws);
+    }
+    $a1 = trim((string)$ws->getCell("A1")->getValue());
+    if ($a1 === "") {
+        $col = 1;
+        foreach ($headers as $h) {
+            $ws->setCellValueByColumnAndRow($col, 1, $h);
+            $col++;
+        }
+    }
+    return $ws;
+}
+
 function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon): array {
     if (!file_exists($path)) {
         return ["ok" => false, "error" => "spray_list_not_found"];
@@ -138,6 +164,83 @@ function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon
     }
     if (!$found) {
         return ["ok" => false, "error" => "drain_not_found_in_sheet"];
+    }
+
+    try {
+        $writer = \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, "Xlsx");
+        $writer->save($path);
+    } catch (Exception $e) {
+        return ["ok" => false, "error" => "spray_list_save_failed", "detail" => $e->getMessage()];
+    }
+
+    return ["ok" => true];
+}
+
+function update_module_pin(string $path, string $sheet, array $job): array {
+    if (!file_exists($path)) {
+        return ["ok" => false, "error" => "spray_list_not_found"];
+    }
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) {
+        return ["ok" => false, "error" => "phpspreadsheet_missing"];
+    }
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+
+    try {
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+    } catch (Exception $e) {
+        return ["ok" => false, "error" => "spray_list_load_failed", "detail" => $e->getMessage()];
+    }
+
+    $headers = [
+        "job_key","module","job_type","sheet","item","lat","lon","work_order","po","unit",
+        "qty_default","completed","completed_at","invoiced","invoiced_at","qty","current_work","meta","updated_at"
+    ];
+    $ws = ensure_sheet_with_headers($spreadsheet, $sheet, $headers);
+
+    $jobKey = (string)($job["job_key"] ?? "");
+    if ($jobKey === "") {
+        return ["ok" => false, "error" => "missing_job_key"];
+    }
+
+    $rowData = [
+        "job_key" => $jobKey,
+        "module" => (string)($job["module"] ?? ""),
+        "job_type" => (string)($job["job_type"] ?? ""),
+        "sheet" => (string)($job["sheet"] ?? ""),
+        "item" => (string)($job["item"] ?? ""),
+        "lat" => $job["lat"] ?? null,
+        "lon" => $job["lon"] ?? null,
+        "work_order" => (string)($job["work_order"] ?? ""),
+        "po" => (string)($job["po"] ?? ""),
+        "unit" => (string)($job["unit"] ?? ""),
+        "qty_default" => $job["qty_default"] ?? null,
+        "completed" => $job["completed"] ?? null,
+        "completed_at" => $job["completed_at"] ?? null,
+        "invoiced" => $job["invoiced"] ?? null,
+        "invoiced_at" => $job["invoiced_at"] ?? null,
+        "qty" => $job["qty"] ?? null,
+        "current_work" => $job["current_work"] ?? null,
+        "meta" => $job["meta"] ?? null,
+        "updated_at" => $job["updated_at"] ?? null,
+    ];
+
+    $endRow = $ws->getHighestRow();
+    $targetRow = 0;
+    for ($r = 2; $r <= $endRow; $r++) {
+        $val = trim((string)$ws->getCell("A{$r}")->getValue());
+        if ($val === $jobKey) {
+            $targetRow = $r;
+            break;
+        }
+    }
+    if ($targetRow === 0) {
+        $targetRow = $endRow + 1;
+    }
+
+    $col = 1;
+    foreach ($headers as $h) {
+        $ws->setCellValueByColumnAndRow($col, $targetRow, $rowData[$h]);
+        $col++;
     }
 
     try {
@@ -213,8 +316,21 @@ if ($action === "update_pin" && $method === "POST") {
         ":job_key" => $job_key,
     ]);
 
+    $stmt = $pdo->prepare("SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at FROM jobs WHERE job_key = :job_key");
+    $stmt->execute([":job_key" => $job_key]);
+    $job = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$job) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "job_not_found"]);
+        exit;
+    }
+
     $path = master_spray_list($cfg);
-    $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
+    if (strtolower((string)($job["module"] ?? "")) === "drain") {
+        $pin_result = update_spray_pin($path, $sheet, $drain, $lat, $lon);
+    } else {
+        $pin_result = update_module_pin($path, module_sheet_name((string)($job["module"] ?? "")), $job);
+    }
     if (!$pin_result["ok"]) {
         http_response_code(500);
         $pin_result["path"] = $path;
