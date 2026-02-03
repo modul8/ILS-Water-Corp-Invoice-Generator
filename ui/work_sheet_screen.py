@@ -6,7 +6,7 @@ import logging
 from datetime import date
 import time
 
-from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtCore import Qt, Signal, QUrl, QUrlQuery
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -394,8 +394,13 @@ class WorkSheetScreen(QWidget):
                     if "," in coords:
                         lat_val, lon_val = [v.strip() for v in coords.split(",", 1)]
                         if lat_val and lon_val:
-                            q = f"{label} {lat_val},{lon_val}".strip()
-                            QDesktopServices.openUrl(QUrl(f"https://maps.google.com/?q={q}"))
+                        url = QUrl("https://www.google.com/maps")
+                        query = QUrlQuery()
+                        query.addQueryItem("q", label)
+                        query.addQueryItem("ll", f"{lat_val},{lon_val}")
+                        query.addQueryItem("z", "17")
+                        url.setQuery(query)
+                        QDesktopServices.openUrl(url)
             return
 
     def _on_double_click(self, row: int, col: int) -> None:
