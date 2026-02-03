@@ -16,11 +16,12 @@ rsync -av --delete \
 # Ensure PHP user can read vendor after sync.
 if [ -d "$DEST_DIR/vendor" ]; then
   if [ -n "$APP_OWNER" ]; then
-    chown -R "$APP_OWNER" "$DEST_DIR/vendor"
+    chown -R "$APP_OWNER" "$DEST_DIR/vendor" || true
   elif id -u application >/dev/null 2>&1; then
-    chown -R application:application "$DEST_DIR/vendor"
+    chown -R application:application "$DEST_DIR/vendor" || true
   fi
-  chmod -R u+rwX,go+rX "$DEST_DIR/vendor"
+  # On ACL-managed datasets, chmod may be blocked; don't fail deploy.
+  chmod -R u+rwX,go+rX "$DEST_DIR/vendor" || true
 fi
 
 # Sync assets separately so upgrades can refresh them while still keeping config.php.
