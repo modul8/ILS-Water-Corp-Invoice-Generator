@@ -6,6 +6,7 @@ from typing import Callable
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
+import sys
 
 from services.settings_store import SettingsStore
 
@@ -23,7 +24,7 @@ class HomeScreen(QWidget):
 
         logo = QLabel()
         logo.setAlignment(Qt.AlignCenter)
-        logo_path = Path("assets") / "ILS LOGO.png"
+        logo_path = self._asset_path("ILS LOGO.png")
         if logo_path.exists():
             pix = QPixmap(str(logo_path))
             if not pix.isNull():
@@ -48,7 +49,7 @@ class HomeScreen(QWidget):
 
         powered_logo = QLabel()
         powered_logo.setAlignment(Qt.AlignCenter)
-        powered_logo_path = Path("assets") / "RealTVSoftware.png"
+        powered_logo_path = self._asset_path("RealTVSoftware.png")
         if powered_logo_path.exists():
             pix = QPixmap(str(powered_logo_path))
             if not pix.isNull():
@@ -63,6 +64,10 @@ class HomeScreen(QWidget):
 
         root.addStretch(1)
         self.reload_from_settings()
+
+    def _asset_path(self, filename: str) -> Path:
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+        return base / "assets" / filename
 
     def reload_from_settings(self) -> None:
         s = self.store.load_settings()
