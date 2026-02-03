@@ -325,9 +325,10 @@ class WorkSheetScreen(QWidget):
                     pin_item.setIcon(QIcon(str(icon_path)))
                 else:
                     pin_item.setText("📍")
+                pin_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 pin_item.setTextAlignment(Qt.AlignCenter)
                 pin_item.setToolTip(f"{lat}, {lon}")
-                pin_item.setData(Qt.UserRole, (lat, lon))
+                pin_item.setData(Qt.UserRole, f"{lat},{lon}")
                 self.table.setItem(row, 8, pin_item)
 
             current_item = QTableWidgetItem()
@@ -387,10 +388,10 @@ class WorkSheetScreen(QWidget):
         if col == 8:
             pin_item = self.table.item(row, 8)
             if pin_item:
-                data = pin_item.data(Qt.UserRole)
-                if isinstance(data, tuple) and len(data) == 2:
-                    lat_val, lon_val = data
-                    if lat_val not in ("", None) and lon_val not in ("", None):
+                data = pin_item.data(Qt.UserRole) or ""
+                if isinstance(data, str) and "," in data:
+                    lat_val, lon_val = [v.strip() for v in data.split(",", 1)]
+                    if lat_val and lon_val:
                         q = f"{lat_val},{lon_val}"
                         QDesktopServices.openUrl(QUrl(f"https://maps.google.com/?q={q}"))
             return

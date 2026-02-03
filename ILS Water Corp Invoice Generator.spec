@@ -5,7 +5,10 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets\\ILS_WC.png', 'assets')],
+    datas=[
+        ('assets\\ILS_WC.png', 'assets'),
+        ('assets\\gps.png', 'assets'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
