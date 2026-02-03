@@ -106,7 +106,7 @@ class WorkSheetScreen(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.setIconSize(QSize(48, 48))
+        self.table.setIconSize(QSize(32, 32))
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.cellClicked.connect(self._on_click)
@@ -331,7 +331,7 @@ class WorkSheetScreen(QWidget):
                 pin_item.setToolTip(f"{lat}, {lon}")
                 pin_item.setData(Qt.UserRole, f"{r.location}|{lat},{lon}")
                 self.table.setItem(row, 8, pin_item)
-                self.table.setRowHeight(row, 52)
+                self.table.setRowHeight(row, 36)
 
             current_item = QTableWidgetItem()
             current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)

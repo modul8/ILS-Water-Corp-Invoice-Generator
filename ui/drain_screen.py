@@ -96,7 +96,7 @@ class DrainSprayingScreen(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
-        self.table.setIconSize(QSize(48, 48))
+        self.table.setIconSize(QSize(32, 32))
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.cellClicked.connect(self._on_click)
@@ -377,7 +377,7 @@ class DrainSprayingScreen(QWidget):
                 pin_item.setToolTip(f"{lat}, {lon}")
                 pin_item.setData(Qt.UserRole, f"{drain}|{lat},{lon}")
                 self.table.setItem(row, 9, pin_item)
-                self.table.setRowHeight(row, 52)
+                self.table.setRowHeight(row, 36)
 
             current_item = QTableWidgetItem()
             current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
