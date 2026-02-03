@@ -58,6 +58,13 @@ function form_or_json() {
     return json_body();
 }
 
+function debug_enabled(array $cfg): bool {
+    if (isset($_GET["debug"]) && ($_GET["debug"] === "1" || $_GET["debug"] === "true")) {
+        return true;
+    }
+    return (bool)($cfg["debug"] ?? false);
+}
+
 function norm_date($value) {
     if ($value === null) return null;
     if (is_string($value) && trim($value) === "") return null;
@@ -350,6 +357,7 @@ if ($action === "update_pin" && $method === "POST") {
     $drain = isset($body["drain"]) && $body["drain"] !== "" ? trim((string)$body["drain"]) : ($parts[2] ?? "");
 
     $path = master_spray_list($cfg);
+    $debug = debug_enabled($cfg);
     try {
         if (strtolower((string)($job["module"] ?? "")) === "drain") {
             if ($sheet === "" || $drain === "") {
@@ -363,16 +371,28 @@ if ($action === "update_pin" && $method === "POST") {
         }
     } catch (Exception $e) {
         http_response_code(500);
-        echo json_encode(["ok" => false, "error" => "pin_update_exception", "detail" => $e->getMessage(), "path" => $path]);
+        $resp = ["ok" => false, "error" => "pin_update_exception"];
+        if ($debug) {
+            $resp["detail"] = $e->getMessage();
+            $resp["path"] = $path;
+        }
+        echo json_encode($resp);
         exit;
     } catch (Error $e) {
         http_response_code(500);
-        echo json_encode(["ok" => false, "error" => "pin_update_error", "detail" => $e->getMessage(), "path" => $path]);
+        $resp = ["ok" => false, "error" => "pin_update_error"];
+        if ($debug) {
+            $resp["detail"] = $e->getMessage();
+            $resp["path"] = $path;
+        }
+        echo json_encode($resp);
         exit;
     }
     if (!$pin_result["ok"]) {
         http_response_code(500);
-        $pin_result["path"] = $path;
+        if ($debug) {
+            $pin_result["path"] = $path;
+        }
         echo json_encode($pin_result);
         exit;
     }
