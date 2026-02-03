@@ -67,7 +67,7 @@ if ($ui_password !== "") {
     .card { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
     .title { font-weight: 700; margin-bottom: 4px; font-size: 18px; }
     .title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .map-link img { width: 22px; height: 22px; display: block; }
+    .map-link img { width: 66px; height: 66px; display: block; }
     .meta { color: #666; font-size: 13px; margin-bottom: 8px; }
     .module { color: #7a7a7a; font-size: 12px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
