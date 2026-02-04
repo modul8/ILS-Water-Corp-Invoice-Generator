@@ -7,6 +7,27 @@ if (!file_exists($config_path)) {
     echo json_encode(["ok" => false, "error" => "config.php missing"]);
     exit;
 }
+$uploads_dir = dirname(__DIR__) . "/uploads";
+if (!is_dir($uploads_dir)) {
+    @mkdir($uploads_dir, 0775, true);
+}
+@ini_set("log_errors", "1");
+@ini_set("error_log", $uploads_dir . "/php_errors.log");
+register_shutdown_function(function () use ($uploads_dir) {
+    $err = error_get_last();
+    if (!$err) return;
+    if (!isset($err["type"]) || !in_array($err["type"], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) return;
+    $line = json_encode([
+        "ts" => date("Y-m-d H:i:s"),
+        "type" => $err["type"],
+        "message" => $err["message"] ?? "",
+        "file" => $err["file"] ?? "",
+        "line" => $err["line"] ?? "",
+    ], JSON_UNESCAPED_SLASHES);
+    if ($line) {
+        @file_put_contents($uploads_dir . "/php_errors.log", $line . "\n", FILE_APPEND | LOCK_EX);
+    }
+});
 $cfg = require $config_path;
 $GLOBALS["CFG"] = $cfg;
 
@@ -132,7 +153,10 @@ function safe_float_val($x): ?float {
     if (is_int($x) || is_float($x)) return (float)$x;
     $s = trim((string)$x);
     if ($s === "") return null;
-    $s = str_replace(",", "", $s);
+    $s = str_replace([",", " "], "", $s);
+    if (preg_match('/^(\\d+)\\+(\\d+(?:\\.\\d+)?)$/', $s, $m)) {
+        return ((float)$m[1] * 1000.0) + (float)$m[2];
+    }
     if (!is_numeric($s)) return null;
     return (float)$s;
 }
@@ -149,6 +173,37 @@ function strip_segment_suffix(string $name): string {
         return trim($m[1]);
     }
     return $name;
+}
+
+function cell_value($ws, int $col, int $row) {
+    if (method_exists($ws, "getCellByColumnAndRow")) {
+        $cell = $ws->getCellByColumnAndRow($col, $row);
+    } else {
+        $colStr = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col);
+        $cell = $ws->getCell($colStr . $row);
+    }
+    $v = $cell->getValue();
+    if (is_string($v) && $v !== "" && $v[0] === "=") {
+        try {
+            $calc = $cell->getCalculatedValue();
+            if ($calc !== null) return $calc;
+        } catch (Exception $e) {
+            // ignore formula calc errors, fall back to raw value
+        }
+    }
+    return $v;
+}
+
+function parse_range_str($s): ?array {
+    if ($s === null) return null;
+    $t = trim((string)$s);
+    if ($t === "") return null;
+    if (preg_match('/^\\s*([0-9.+\\s]+)\\s*[-–]\\s*([0-9.+\\s]+)\\s*$/', $t, $m)) {
+        $a = safe_float_val($m[1]);
+        $b = safe_float_val($m[2]);
+        if ($a !== null && $b !== null) return [$a, $b];
+    }
+    return null;
 }
 
 function spray_list_rows(string $path): array {
@@ -173,16 +228,21 @@ function spray_list_rows(string $path): array {
         $start_row = $header_row ? $header_row + 1 : 2;
         $last_drain = "";
         for ($r = $start_row; $r <= $max_row; $r++) {
-            $a = $ws->getCellByColumnAndRow(1, $r)->getValue();
-            $b = $ws->getCellByColumnAndRow(2, $r)->getValue();
-            $c = $ws->getCellByColumnAndRow(3, $r)->getValue();
-            $d = $ws->getCellByColumnAndRow(4, $r)->getValue();
-            $lat_raw = $ws->getCellByColumnAndRow(6, $r)->getValue();
-            $lon_raw = $ws->getCellByColumnAndRow(7, $r)->getValue();
+            $a = cell_value($ws, 1, $r);
+            $b = cell_value($ws, 2, $r);
+            $c = cell_value($ws, 3, $r);
+            $d = cell_value($ws, 4, $r);
+            $lat_raw = cell_value($ws, 6, $r);
+            $lon_raw = cell_value($ws, 7, $r);
 
             $a_str = $a !== null ? trim((string)$a) : "";
             $a_norm = norm_str($a_str);
-            if ($a_str === "" && ($d === null || trim((string)$d) === "")) {
+            if (
+                $a_str === "" &&
+                ($d === null || trim((string)$d) === "") &&
+                ($b === null || trim((string)$b) === "") &&
+                ($c === null || trim((string)$c) === "")
+            ) {
                 continue;
             }
             if ($a_str !== "" && strpos($a_norm, "CATCHMENT") !== false && ($d === null || trim((string)$d) === "")) {
@@ -202,6 +262,13 @@ function spray_list_rows(string $path): array {
 
             $start_m = safe_float_val($b);
             $end_m = safe_float_val($c);
+            if ($start_m === null && $end_m === null) {
+                $range = parse_range_str($b);
+                if ($range) {
+                    $start_m = $range[0];
+                    $end_m = $range[1];
+                }
+            }
             if ($start_m !== null && $end_m !== null) {
                 $fmt = function ($x) { return (floor($x) == $x) ? (string)(int)$x : (string)$x; };
                 $drain = $drain . " (" . $fmt($start_m) . "-" . $fmt($end_m) . ")";
@@ -363,7 +430,12 @@ function latest_upload(string $prefix): string {
     $dir = ensure_upload_dir();
     $files = glob($dir . "/" . $prefix . "*.xlsx");
     if (!$files) return "";
-    rsort($files, SORT_STRING);
+    usort($files, function ($a, $b) {
+        $ta = @filemtime($a) ?: 0;
+        $tb = @filemtime($b) ?: 0;
+        if ($ta === $tb) return strcmp($b, $a);
+        return $tb <=> $ta;
+    });
     return $files[0];
 }
 
