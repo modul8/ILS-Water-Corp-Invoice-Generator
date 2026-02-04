@@ -8,7 +8,7 @@ from PySide6.QtGui import QPalette, QColor
 from services.settings_store import SettingsStore
 from ui.shell import AppShell
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.3.4"
 
 
 def _configure_logging(app_dir: Path) -> None:
