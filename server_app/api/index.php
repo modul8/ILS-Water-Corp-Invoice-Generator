@@ -459,6 +459,33 @@ if ($action === "upload_photo" && $method === "POST") {
     exit;
 }
 
+if ($action === "delete_photo" && $method === "POST") {
+    $body = form_or_json();
+    $id = isset($body["id"]) ? intval($body["id"]) : 0;
+    if ($id <= 0) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_id"]);
+        exit;
+    }
+    $stmt = $pdo->prepare("SELECT stored_path FROM photos WHERE id = :id");
+    $stmt->execute([":id" => $id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        http_response_code(404);
+        echo json_encode(["ok" => false, "error" => "not_found"]);
+        exit;
+    }
+    $path = $row["stored_path"];
+    if (is_file($path)) {
+        @unlink($path);
+    }
+    $stmt = $pdo->prepare("DELETE FROM photos WHERE id = :id");
+    $stmt->execute([":id" => $id]);
+    log_change("delete_photo", "photo:" . $id, ["path" => $path]);
+    echo json_encode(["ok" => true]);
+    exit;
+}
+
 if ($action === "search_item" && $method === "GET") {
     $q = isset($_GET["q"]) ? trim($_GET["q"]) : "";
     $module = isset($_GET["module"]) ? trim($_GET["module"]) : "";

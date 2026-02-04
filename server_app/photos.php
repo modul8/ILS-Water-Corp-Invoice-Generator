@@ -68,6 +68,8 @@ $api_key = urlencode($cfg["api_key"] ?? "");
     .card { border: 1px solid #ddd; border-radius: 8px; padding: 8px; background: #fff; }
     .card img { width: 100%; height: auto; border-radius: 6px; }
     .small { font-size: 12px; color: #666; }
+    .actions { margin-top: 6px; display:flex; gap:8px; }
+    .danger { background:#e11d48; color:#fff; border:none; padding:6px 8px; border-radius:6px; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -84,9 +86,30 @@ $api_key = urlencode($cfg["api_key"] ?? "");
           </a>
           <div class="small"><?php echo htmlspecialchars($r["filename"]); ?></div>
           <div class="small"><?php echo htmlspecialchars($r["created_at"]); ?></div>
+          <div class="actions">
+            <button class="danger" onclick="deletePhoto(<?php echo (int)$r['id']; ?>)">Delete</button>
+          </div>
         </div>
       <?php endforeach; ?>
     </div>
   <?php endif; ?>
+
+<script>
+async function deletePhoto(id) {
+  if (!confirm("Delete this photo?")) return;
+  const form = new FormData();
+  form.append("id", String(id));
+  const url = new URL("api/index.php", window.location.href);
+  url.searchParams.set("action", "delete_photo");
+  url.searchParams.set("key", "<?php echo $api_key; ?>");
+  const res = await fetch(url, { method: "POST", body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    alert("Delete failed.");
+    return;
+  }
+  location.reload();
+}
+</script>
 </body>
 </html>
