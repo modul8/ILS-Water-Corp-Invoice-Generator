@@ -293,6 +293,21 @@ function spray_list_rows(string $path): array {
             ];
         }
     }
+    // If a drain has segmented rows, drop the unsegmented base row
+    $has_segment = [];
+    foreach ($rows as $r) {
+        if ($r["start_m"] !== null && $r["end_m"] !== null) {
+            $key = norm_str($r["sheet"]) . "|" . norm_str($r["catchment"]) . "|" . norm_str(strip_segment_suffix($r["drain"]));
+            $has_segment[$key] = true;
+        }
+    }
+    if ($has_segment) {
+        $rows = array_values(array_filter($rows, function ($r) use ($has_segment) {
+            if ($r["start_m"] !== null && $r["end_m"] !== null) return true;
+            $key = norm_str($r["sheet"]) . "|" . norm_str($r["catchment"]) . "|" . norm_str(strip_segment_suffix($r["drain"]));
+            return !isset($has_segment[$key]);
+        }));
+    }
     return $rows;
 }
 
