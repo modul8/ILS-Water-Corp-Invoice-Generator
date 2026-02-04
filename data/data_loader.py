@@ -42,6 +42,8 @@ class SprayRow:
     drain: str
     distance_m: float
     qty_km: float
+    start_m: Optional[float] = None
+    end_m: Optional[float] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
 
@@ -83,8 +85,12 @@ def load_spray_list(path: str) -> List[SprayRow]:
 
         start_row = (header_row + 1) if header_row else 2
 
+        last_drain: Optional[str] = None
+
         for r in range(start_row, ws.max_row + 1):
             a = ws.cell(r, 1).value  # Drain Name or Catchment
+            b = ws.cell(r, 2).value  # Start (m)
+            c = ws.cell(r, 3).value  # End (m)
             d = ws.cell(r, 4).value  # Distance (m)
             lat_raw = ws.cell(r, 6).value  # Pins -> Lat
             lon_raw = ws.cell(r, 7).value  # Pins -> Long
@@ -107,12 +113,27 @@ def load_spray_list(path: str) -> List[SprayRow]:
             if a_norm.startswith("TOTAL "):
                 continue
 
-            dist = safe_float(d)
-            if dist is None:
-                continue
-
             drain = a_str.strip()
             if not drain:
+                if last_drain:
+                    drain = last_drain
+                else:
+                    continue
+            else:
+                last_drain = drain
+
+            start_m = safe_float(b)
+            end_m = safe_float(c)
+            if start_m is not None and end_m is not None:
+                def _fmt_m(x: float) -> str:
+                    return str(int(x)) if float(x).is_integer() else str(x)
+                drain = f"{drain} ({_fmt_m(start_m)}-{_fmt_m(end_m)})"
+
+            dist = safe_float(d)
+            if dist is None and start_m is not None and end_m is not None:
+                if end_m >= start_m:
+                    dist = end_m - start_m
+            if dist is None:
                 continue
 
             lat = safe_float(lat_raw)
@@ -125,6 +146,8 @@ def load_spray_list(path: str) -> List[SprayRow]:
                     drain=drain,
                     distance_m=float(dist),
                     qty_km=round(float(dist) / 1000.0, 2),
+                    start_m=start_m,
+                    end_m=end_m,
                     lat=lat,
                     lon=lon,
                 )

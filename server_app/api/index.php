@@ -220,12 +220,37 @@ function update_spray_pin(string $path, string $sheet, string $drain, $lat, $lon
     $start_row = $header_row ? $header_row + 1 : 1;
     $end_row = $ws->getHighestRow();
     $found = false;
+    $base_name = $drain;
+    $seg_start = null;
+    $seg_end = null;
+    if (preg_match('/^(.*)\\(([0-9.]+)\\s*-\\s*([0-9.]+)\\)\\s*$/', $drain, $m)) {
+        $base_name = trim($m[1]);
+        $seg_start = (float)$m[2];
+        $seg_end = (float)$m[3];
+    }
+    $last_name = "";
     for ($r = $start_row; $r <= $end_row; $r++) {
         $name = trim((string)$ws->getCell("A{$r}")->getValue());
-        if ($name === "") {
+        if ($name !== "") {
+            $last_name = $name;
+        }
+        $effective_name = $name !== "" ? $name : $last_name;
+        if ($effective_name === "") {
             continue;
         }
-        if (strcasecmp($name, $drain) === 0) {
+        if (strcasecmp($effective_name, $base_name) === 0) {
+            if ($seg_start !== null && $seg_end !== null) {
+                $b = trim((string)$ws->getCell("B{$r}")->getValue());
+                $c = trim((string)$ws->getCell("C{$r}")->getValue());
+                $b_val = is_numeric($b) ? (float)$b : null;
+                $c_val = is_numeric($c) ? (float)$c : null;
+                if ($b_val === null || $c_val === null) {
+                    continue;
+                }
+                if (abs($b_val - $seg_start) > 0.01 || abs($c_val - $seg_end) > 0.01) {
+                    continue;
+                }
+            }
             $ws->setCellValue("F{$r}", $lat === "" ? null : $lat);
             $ws->setCellValue("G{$r}", $lon === "" ? null : $lon);
             $found = true;

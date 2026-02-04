@@ -621,6 +621,8 @@ class DrainSprayingScreen(QWidget):
                 "catchment": getattr(r, "catchment", "") or "",
                 "drain": getattr(r, "drain", ""),
                 "qty_km": float(getattr(r, "qty_km", 0.0)),
+                "start_m": getattr(r, "start_m", None),
+                "end_m": getattr(r, "end_m", None),
                 "work_order": getattr(r, "work_order", "") or "",
                 "po": getattr(r, "po", "") or "",
                 "lat": getattr(r, "lat", None),

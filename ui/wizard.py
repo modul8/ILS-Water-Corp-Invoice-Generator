@@ -393,6 +393,8 @@ class SetupWizard(QDialog):
                         "catchment": r.catchment or "",
                         "drain": r.drain,
                         "qty_km": float(r.qty_km),
+                        "start_m": r.start_m,
+                        "end_m": r.end_m,
                         "work_order": r.work_order or "",
                         "po": r.po or "",
                         "lat": r.lat,
