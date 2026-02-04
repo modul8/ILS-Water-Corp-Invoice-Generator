@@ -1,7 +1,7 @@
 ; Inno Setup script for ILS Water Corp Invoice Generator
 
 #define AppName "ILS Water Corp Invoice Generator"
-#define AppVersion "2.3.12"
+#define AppVersion "2.3.13"
 #define AppPublisher "RealTV"
 #define AppExeName "ILS Water Corp Invoice Generator.exe"
 #define AppId "{{B4A9A1B4-6F4B-4E6E-9C0F-8A7B9E3F2C10}"

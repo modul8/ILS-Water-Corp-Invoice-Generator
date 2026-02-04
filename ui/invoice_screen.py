@@ -493,6 +493,7 @@ class InvoiceScreen(QWidget):
             ]
             lines.extend(block)
 
+            photo_cell = f'<a href="{photo_url}">Photos</a>' if photo_url else "(none)"
             html_rows.append(
                 "<tr>"
                 f"<td>{self._job_type_label(module)}</td>"
@@ -500,7 +501,7 @@ class InvoiceScreen(QWidget):
                 f"<td>{wo}</td>"
                 f"<td>{po}</td>"
                 f"<td>{completed_at}</td>"
-                f"<td>{f'<a href=\"{photo_url}\">Photos</a>' if photo_url else '(none)'}</td>"
+                f"<td>{photo_cell}</td>"
                 "</tr>"
             )
 
