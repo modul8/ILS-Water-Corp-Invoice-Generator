@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
+import os
+import sys
 from PyInstaller.utils.hooks import collect_submodules
+
+sys.path.insert(0, os.path.abspath('.'))
 
 hidden = []
 hidden += collect_submodules('ui')
