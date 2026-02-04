@@ -37,6 +37,7 @@ def safe_float(x: Any) -> Optional[float]:
 
 @dataclass
 class SprayRow:
+    job_key: Optional[str]
     sheet: str
     catchment: Optional[str]
     drain: str
@@ -98,8 +99,13 @@ def load_spray_list(path: str) -> List[SprayRow]:
             a_str = str(a).strip() if a is not None else ""
             a_norm = norm(a_str)
 
-            # Skip blank rows
-            if not a_str and (d is None or str(d).strip() == ""):
+            # Skip blank rows (allow B/C-only segment rows)
+            if (
+                not a_str
+                and (d is None or str(d).strip() == "")
+                and (b is None or str(b).strip() == "")
+                and (c is None or str(c).strip() == "")
+            ):
                 continue
 
             # Catchment header
@@ -141,6 +147,7 @@ def load_spray_list(path: str) -> List[SprayRow]:
 
             out.append(
                 SprayRow(
+                    job_key=None,
                     sheet=ws.title,
                     catchment=current_catchment,
                     drain=drain,

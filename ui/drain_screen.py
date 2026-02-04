@@ -31,6 +31,9 @@ from data.data_loader import (
 
 
 def row_key(r) -> str:
+    jk = getattr(r, "job_key", None)
+    if jk:
+        return str(jk)
     sheet = norm(getattr(r, "sheet", ""))
     catchment = norm(getattr(r, "catchment", "") or "")
     drain = norm(getattr(r, "drain", ""))
@@ -262,6 +265,7 @@ class DrainSprayingScreen(QWidget):
                 meta["qty_km"] = round(km, 2)
 
             r = SprayRow(
+                job_key=j.get("job_key") or None,
                 sheet=str(j.get("sheet") or ""),
                 catchment=meta.get("catchment") or "",
                 drain=drain,
