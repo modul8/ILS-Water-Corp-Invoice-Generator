@@ -457,8 +457,21 @@ class InvoiceScreen(QWidget):
         out_dir = Path(export_dir).expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
 
+        settings = self.store.load_settings()
+        photo_base = (settings.get("field_api_base") or "").strip()
+        api_key = (settings.get("field_api_key") or "").strip()
+        if photo_base.endswith("/api/index.php"):
+            photo_base = photo_base[: -len("/api/index.php")]
+        photo_base = photo_base.rstrip("/")
+
+        def photos_link(job_key: str) -> str:
+            if not photo_base or not api_key or not job_key:
+                return ""
+            return f"{photo_base}/photos.php?job_key={job_key}&key={api_key}"
+
         lines: List[str] = []
-        for _, rec in selected_recs:
+        html_rows: List[str] = []
+        for key, rec in selected_recs:
             meta = rec.get("meta") or {}
             module = rec.get("module", "unknown")
             item = meta.get("drain") or meta.get("location") or meta.get("item") or ""
@@ -467,6 +480,7 @@ class InvoiceScreen(QWidget):
             completed_at = rec.get("completed_at") or meta.get("completed_at") or ""
             if not completed_at:
                 completed_at = date.today().isoformat()
+            photo_url = photos_link(key)
 
             block = [
                 f"Job Type: {self._job_type_label(module)}",
@@ -474,14 +488,41 @@ class InvoiceScreen(QWidget):
                 f"WO: {wo}",
                 f"PO: {po}",
                 f"Completed: {completed_at}",
+                f"Photos: {photo_url}" if photo_url else "Photos: (none)",
                 "",
             ]
             lines.extend(block)
+
+            html_rows.append(
+                "<tr>"
+                f"<td>{self._job_type_label(module)}</td>"
+                f"<td>{item}</td>"
+                f"<td>{wo}</td>"
+                f"<td>{po}</td>"
+                f"<td>{completed_at}</td>"
+                f"<td>{f'<a href=\"{photo_url}\">Photos</a>' if photo_url else '(none)'}</td>"
+                "</tr>"
+            )
 
         stamp = date.today().isoformat()
         stem = self._safe_filename(f"invoiced_jobs_{stamp}")
         path = self._next_available_path(out_dir / f"{stem}.txt")
         path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+        html = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            "<style>body{font-family:Arial,sans-serif;}table{border-collapse:collapse;width:100%;}"
+            "th,td{border:1px solid #ddd;padding:8px;text-align:left;}th{background:#f5f5f5;}</style>"
+            "</head><body>"
+            f"<h2>Invoiced Jobs {stamp}</h2>"
+            "<table><thead><tr>"
+            "<th>Job Type</th><th>Item</th><th>WO</th><th>PO</th><th>Completed</th><th>Photos</th>"
+            "</tr></thead><tbody>"
+            + "".join(html_rows)
+            + "</tbody></table></body></html>"
+        )
+        html_path = self._next_available_path(out_dir / f"{stem}.html")
+        html_path.write_text(html, encoding="utf-8")
 
     def _parse_completed_date(self, rec: Dict[str, Any]) -> date | None:
         meta = rec.get("meta") or {}

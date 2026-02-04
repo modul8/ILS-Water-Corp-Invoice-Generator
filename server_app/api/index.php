@@ -45,6 +45,21 @@ if ($db_port !== "") {
     exit;
 }
 
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS photos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        job_key VARCHAR(255) NOT NULL,
+        filename VARCHAR(255) NOT NULL,
+        stored_path TEXT NOT NULL,
+        lat DECIMAL(10,6) DEFAULT NULL,
+        lon DECIMAL(10,6) DEFAULT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_photos_job_key (job_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Exception $e) {
+    // ignore: app can run without photos table
+}
+
 function json_body() {
     $raw = file_get_contents("php://input");
     if (!$raw) return [];
@@ -81,6 +96,27 @@ function ensure_upload_dir(): string {
         @mkdir($dir, 0775, true);
     }
     return $dir;
+}
+
+function ensure_photos_dir(string $job_key): string {
+    $base = ensure_upload_dir() . "/job_photos";
+    if (!is_dir($base)) {
+        @mkdir($base, 0775, true);
+    }
+    $safe = preg_replace('/[^A-Za-z0-9._-]+/', "_", $job_key);
+    $dir = $base . "/" . $safe;
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+function photos_base_url(array $cfg): string {
+    $base = (string)($cfg["photo_base_url"] ?? "");
+    if ($base !== "") return rtrim($base, "/");
+    $scheme = (!empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off") ? "https" : "http";
+    $host = $_SERVER["HTTP_HOST"] ?? "";
+    return $scheme . "://" . $host;
 }
 
 function log_change(string $action, string $job_key, array $fields = []): void {
@@ -349,6 +385,77 @@ if ($action === "list" && $method === "GET") {
     }
     unset($row);
     echo json_encode(["ok" => true, "jobs" => $rows]);
+    exit;
+}
+
+if ($action === "list_photos" && $method === "GET") {
+    $job_key = isset($_GET["job_key"]) ? trim($_GET["job_key"]) : "";
+    if ($job_key === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_job_key"]);
+        exit;
+    }
+    $stmt = $pdo->prepare("SELECT id, job_key, filename, lat, lon, created_at FROM photos WHERE job_key = :job_key ORDER BY created_at DESC");
+    $stmt->execute([":job_key" => $job_key]);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $base = photos_base_url($cfg);
+    foreach ($rows as &$row) {
+        $row["url"] = $base . "/photo.php?id=" . $row["id"] . "&key=" . urlencode($cfg["api_key"] ?? "");
+    }
+    unset($row);
+    echo json_encode(["ok" => true, "photos" => $rows]);
+    exit;
+}
+
+if ($action === "upload_photo" && $method === "POST") {
+    $job_key = isset($_POST["job_key"]) ? trim($_POST["job_key"]) : "";
+    if ($job_key === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_job_key"]);
+        exit;
+    }
+    if (!isset($_FILES["photo"])) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_file"]);
+        exit;
+    }
+    $lat = isset($_POST["lat"]) ? trim((string)$_POST["lat"]) : "";
+    $lon = isset($_POST["lon"]) ? trim((string)$_POST["lon"]) : "";
+    $file = $_FILES["photo"];
+    if (!is_uploaded_file($file["tmp_name"])) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "invalid_upload"]);
+        exit;
+    }
+    $ext = pathinfo($file["name"], PATHINFO_EXTENSION);
+    $ext = $ext ? strtolower($ext) : "jpg";
+    $safe_ext = preg_replace('/[^a-z0-9]+/', "", $ext);
+    if ($safe_ext === "") $safe_ext = "jpg";
+    $dir = ensure_photos_dir($job_key);
+    $stamp = date("Ymd_His");
+    $rand = substr(bin2hex(random_bytes(4)), 0, 8);
+    $name = $stamp . "_" . $rand . "." . $safe_ext;
+    $dest = $dir . "/" . $name;
+    if (!@move_uploaded_file($file["tmp_name"], $dest)) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "save_failed"]);
+        exit;
+    }
+    $stmt = $pdo->prepare("INSERT INTO photos (job_key, filename, stored_path, lat, lon) VALUES (:job_key, :filename, :stored_path, :lat, :lon)");
+    $stmt->execute([
+        ":job_key" => $job_key,
+        ":filename" => $file["name"],
+        ":stored_path" => $dest,
+        ":lat" => $lat === "" ? null : $lat,
+        ":lon" => $lon === "" ? null : $lon,
+    ]);
+    $id = $pdo->lastInsertId();
+    $base = photos_base_url($cfg);
+    echo json_encode([
+        "ok" => true,
+        "id" => $id,
+        "url" => $base . "/photo.php?id=" . $id . "&key=" . urlencode($cfg["api_key"] ?? ""),
+    ]);
     exit;
 }
 

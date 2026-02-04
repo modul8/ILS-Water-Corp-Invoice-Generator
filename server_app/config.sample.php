@@ -12,4 +12,6 @@ return [
     "spray_list_master" => "",
     # Path to change log file on the server.
     "change_log_path" => "/app/uploads/ils_app_changes.log",
+    # Base URL used in photo links (optional). Defaults to current host.
+    "photo_base_url" => "",
 ];

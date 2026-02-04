@@ -75,6 +75,8 @@ if ($ui_password !== "") {
     button { background: #4c8bf5; color: #fff; border: none; padding: 10px 12px; border-radius: 8px; font-weight: 600; }
     button.secondary { background: #888; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; font-size: 12px; }
+    .photo-link { color: #2d6cdf; text-decoration: none; font-weight: 600; }
+    .photo-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -130,6 +132,12 @@ function mapLink(label, lat, lon) {
   const q = encodeURIComponent(`${lat},${lon}`);
   const url = `https://www.google.com/maps/search/?api=1&query=${q}`;
   return `<a class="map-link" href="${url}" target="_blank" rel="noopener" title="Open Map"><img src="assets/gps.png" alt="Map"></a>`;
+}
+
+function photosLink(jobKey) {
+  if (!jobKey) return "";
+  const url = `photos.php?job_key=${encodeURIComponent(jobKey)}&key=${encodeURIComponent(API_KEY)}`;
+  return `<a class="photo-link" href="${url}" target="_blank" rel="noopener" title="View Photos">Photos</a>`;
 }
 
 async function apiGet(params) {
@@ -233,6 +241,7 @@ async function loadJobs() {
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
       const map = mapLink(j.item || "", j.lat, j.lon);
+      const photos = photosLink(j.job_key);
       const latVal = (j.lat !== null && j.lat !== undefined) ? j.lat : "";
       const lonVal = (j.lon !== null && j.lon !== undefined) ? j.lon : "";
       const title = isKm && qtyVal !== "" ? `${j.item || ""} ${qtyVal}${suffix}` : `${j.item || ""}`;
@@ -246,7 +255,7 @@ async function loadJobs() {
           ${map ? map : ""}
         </div>
         <div class="module">${jobTypeLabel(j.module)}</div>
-        <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"}</div>
+        <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"} ${photos ? `| ${photos}` : ""}</div>
         <div class="row">
           <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
           ${qtyInput}
@@ -255,6 +264,8 @@ async function loadJobs() {
         <div class="row">
           <input type="number" step="0.000001" placeholder="Lat" value="${latVal}" id="lat-${j.job_key}">
           <input type="number" step="0.000001" placeholder="Lon" value="${lonVal}" id="lon-${j.job_key}">
+          <input type="file" accept="image/*" capture="environment" id="photo-${j.job_key}">
+          <button class="secondary" onclick="uploadPhoto('${j.job_key}')">Upload Photo</button>
           <button class="secondary" onclick="useGps('${j.job_key}')">Use GPS</button>
           <button onclick="savePin('${j.job_key}')">Save Pin</button>
         </div>` : ""}
@@ -303,6 +314,39 @@ async function savePin(jobKey) {
   } else {
     showError("");
     loadJobs();
+  }
+}
+
+async function uploadPhoto(jobKey) {
+  const fileEl = document.getElementById(`photo-${jobKey}`);
+  if (!fileEl || !fileEl.files || fileEl.files.length === 0) {
+    alert("Select a photo first.");
+    return;
+  }
+  const latEl = document.getElementById(`lat-${jobKey}`);
+  const lonEl = document.getElementById(`lon-${jobKey}`);
+  const lat = latEl ? latEl.value.trim() : "";
+  const lon = lonEl ? lonEl.value.trim() : "";
+
+  const form = new FormData();
+  form.append("job_key", jobKey);
+  form.append("photo", fileEl.files[0]);
+  if (lat) form.append("lat", lat);
+  if (lon) form.append("lon", lon);
+
+  const url = new URL(API_URL, window.location.href);
+  url.searchParams.set("action", "upload_photo");
+  url.searchParams.set("key", API_KEY);
+  try {
+    const res = await fetch(url, { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      alert("Upload failed.");
+      return;
+    }
+    alert("Photo uploaded.");
+  } catch (err) {
+    alert("Upload failed.");
   }
 }
 

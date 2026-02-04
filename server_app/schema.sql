@@ -25,3 +25,14 @@ CREATE TABLE IF NOT EXISTS jobs (
   KEY idx_completed (completed),
   KEY idx_updated (updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS photos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job_key VARCHAR(255) NOT NULL,
+  filename VARCHAR(255) NOT NULL,
+  stored_path TEXT NOT NULL,
+  lat DECIMAL(10,6) DEFAULT NULL,
+  lon DECIMAL(10,6) DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_photos_job_key (job_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
