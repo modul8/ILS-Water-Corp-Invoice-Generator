@@ -452,6 +452,16 @@ function work_list_mapping_debug(string $path): array {
             $header_vals[] = norm_str(cell_value($ws, $c, $header_row));
         }
         $info["header_values"] = $header_vals;
+        $sample_rows = [];
+        for ($r = 1; $r <= min($max_row, 8); $r++) {
+            $vals = [];
+            for ($c = 1; $c <= min($max_col_idx, 20); $c++) {
+                $v = cell_value($ws, $c, $r);
+                $vals[] = is_string($v) ? trim($v) : $v;
+            }
+            $sample_rows[] = ["row" => $r, "values" => $vals];
+        }
+        $info["sample_rows"] = $sample_rows;
 
         $mi_col = null;
         $maint_col = null;
