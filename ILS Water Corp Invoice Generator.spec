@@ -1,9 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
+from PyInstaller.utils.hooks import collect_submodules
+
+hidden = []
+hidden += collect_submodules('ui')
+hidden += collect_submodules('services')
+
 a = Analysis(
     ['app.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
     datas=[
         ('assets\\ILS_WC.png', 'assets'),
@@ -11,15 +17,7 @@ a = Analysis(
         ('assets\\ILS LOGO.png', 'assets'),
         ('assets\\RealTVSoftware.png', 'assets'),
     ],
-    hiddenimports=[
-        'ui.shell',
-        'ui.home_screen',
-        'ui.drain_screen',
-        'ui.work_sheet_screen',
-        'ui.invoice_screen',
-        'ui.wizard',
-        'ui.placeholder_screens',
-    ],
+    hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
