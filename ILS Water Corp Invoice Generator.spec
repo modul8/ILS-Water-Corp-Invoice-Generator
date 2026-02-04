@@ -5,7 +5,7 @@ import os
 import sys
 from PyInstaller.utils.hooks import collect_submodules
 
-root = os.path.abspath(os.path.dirname(__file__))
+root = os.getcwd()
 sys.path.insert(0, root)
 
 hidden = [
