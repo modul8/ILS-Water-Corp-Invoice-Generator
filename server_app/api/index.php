@@ -1185,6 +1185,54 @@ if ($action === "debug_work_mapping" && $method === "GET") {
     exit;
 }
 
+if ($action === "cleanup_segment_bases" && $method === "POST") {
+    $body = form_or_json();
+    $confirm = isset($body["confirm"]) ? (string)$body["confirm"] : "";
+    if ($confirm !== "YES_CLEANUP") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_confirm"]);
+        exit;
+    }
+    $stmt = $pdo->prepare("SELECT job_key, sheet, item, meta FROM jobs WHERE module = 'drain'");
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $has_segment = [];
+    $base_candidates = [];
+    foreach ($rows as $r) {
+        $sheet = $r["sheet"] ?? "";
+        $item = $r["item"] ?? "";
+        $meta = [];
+        if (isset($r["meta"]) && is_string($r["meta"]) && trim($r["meta"]) !== "") {
+            $parsed = json_decode($r["meta"], true);
+            if (is_array($parsed)) $meta = $parsed;
+        }
+        $catchment = $meta["catchment"] ?? "";
+        $base = strip_segment_suffix($item);
+        $key = norm_str($sheet) . "|" . norm_str($catchment) . "|" . norm_str($base);
+        if (preg_match('/\\([0-9.]+\\s*-\\s*[0-9.]+\\)\\s*$/', (string)$item)) {
+            $has_segment[$key] = true;
+        } else {
+            $base_candidates[] = ["job_key" => $r["job_key"], "key" => $key];
+        }
+    }
+    $to_delete = [];
+    foreach ($base_candidates as $c) {
+        if (isset($has_segment[$c["key"]])) {
+            $to_delete[] = $c["job_key"];
+        }
+    }
+    if (!$to_delete) {
+        echo json_encode(["ok" => true, "deleted" => 0]);
+        exit;
+    }
+    $in = implode(",", array_fill(0, count($to_delete), "?"));
+    $del = $pdo->prepare("DELETE FROM jobs WHERE job_key IN ($in)");
+    $del->execute($to_delete);
+    log_change("cleanup_segment_bases", "all", ["deleted" => count($to_delete)]);
+    echo json_encode(["ok" => true, "deleted" => count($to_delete)]);
+    exit;
+}
+
 if ($action === "update_pin" && $method === "POST") {
     $body = form_or_json();
     $job_key = isset($body["job_key"]) ? trim($body["job_key"]) : "";
