@@ -399,6 +399,101 @@ function work_list_mapping(string $path, string $sheet_name = ""): array {
     return [$best_po, $best_mapping];
 }
 
+function work_list_mapping_debug(string $path): array {
+    $out = [
+        "ok" => false,
+        "path" => $path,
+        "sheets" => [],
+    ];
+    if (!file_exists($path)) {
+        $out["error"] = "work_list_not_found";
+        return $out;
+    }
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) {
+        $out["error"] = "phpspreadsheet_missing";
+        return $out;
+    }
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+    $wb = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+
+    foreach ($wb->getWorksheetIterator() as $ws) {
+        $info = [
+            "sheet" => $ws->getTitle(),
+            "po" => "",
+            "header_row" => null,
+            "mi_col" => null,
+            "maint_col" => null,
+            "mapping_count" => 0,
+            "samples" => [],
+        ];
+        $po_raw = $ws->getCell("A1")->getValue();
+        if (!$po_raw) $po_raw = $ws->getCell("B1")->getValue();
+        if (!$po_raw) $po_raw = $ws->getCell("C1")->getValue();
+        $info["po"] = $po_raw !== null ? trim((string)$po_raw) : "";
+
+        $header_row = 2;
+        $max_row = $ws->getHighestRow();
+        $max_col = min(120, $ws->getHighestColumn());
+        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
+        for ($r = 1; $r <= min($max_row, 80); $r++) {
+            $row = [];
+            for ($c = 1; $c <= $max_col_idx; $c++) {
+                $row[] = norm_str(cell_value($ws, $c, $r));
+            }
+            if ((in_array("MI", $row, true) || in_array("MI #", $row, true)) &&
+                (in_array("MAINTITEM TEXT", $row, true) || in_array("LOCATION GROUPING", $row, true))) {
+                $header_row = $r;
+                break;
+            }
+        }
+        $info["header_row"] = $header_row;
+
+        $mi_col = null;
+        $maint_col = null;
+        for ($c = 1; $c <= $max_col_idx; $c++) {
+            $h = norm_str(cell_value($ws, $c, $header_row));
+            if ($h === "MI" || $h === "MI #") $mi_col = $c;
+            if ($h === "MAINTITEM TEXT") $maint_col = $c;
+        }
+        if ($maint_col === null) {
+            for ($c = 1; $c <= $max_col_idx; $c++) {
+                $h = norm_str(cell_value($ws, $c, $header_row));
+                if ($h === "LOCATION GROUPING") { $maint_col = $c; break; }
+            }
+        }
+        if ($mi_col === null) $mi_col = 2;
+        $info["mi_col"] = $mi_col;
+        $info["maint_col"] = $maint_col;
+        if ($maint_col === null) {
+            $out["sheets"][] = $info;
+            continue;
+        }
+
+        $count = 0;
+        $samples = [];
+        for ($r = $header_row + 1; $r <= $max_row; $r++) {
+            $mi = cell_value($ws, $mi_col, $r);
+            $maint = cell_value($ws, $maint_col, $r);
+            if (!$mi || !$maint) continue;
+            $mi_s = trim((string)$mi);
+            if ($mi_s === "") continue;
+            $t = norm_str($maint);
+            if ($t === "") continue;
+            $group = extract_spray_group($t);
+            if ($group === "") continue;
+            $count++;
+            if (count($samples) < 8) {
+                $samples[] = ["mi" => $mi_s, "maint" => trim((string)$maint), "group" => $group];
+            }
+        }
+        $info["mapping_count"] = $count;
+        $info["samples"] = $samples;
+        $out["sheets"][] = $info;
+    }
+    $out["ok"] = true;
+    return $out;
+}
+
 function load_work_list_rows(string $path, string $sheet_name): array {
     $rows = [];
     if (!file_exists($path)) return $rows;
@@ -1032,6 +1127,18 @@ if ($action === "search_item" && $method === "GET") {
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(["ok" => true, "jobs" => $rows]);
+    exit;
+}
+
+if ($action === "debug_work_mapping" && $method === "GET") {
+    $path = latest_upload("work_list_");
+    if ($path === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_work_list"]);
+        exit;
+    }
+    $out = work_list_mapping_debug($path);
+    echo json_encode($out);
     exit;
 }
 
