@@ -928,7 +928,7 @@ if ($action === "changes" && $method === "GET") {
         echo json_encode(["ok" => false, "error" => "missing since"]);
         exit;
     }
-    $sql = "SELECT job_key, module, completed, completed_at, qty, updated_at
+    $sql = "SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
             FROM jobs WHERE updated_at >= :since ORDER BY updated_at ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([":since" => $since]);
