@@ -296,74 +296,107 @@ function spray_list_rows(string $path): array {
     return $rows;
 }
 
-function work_list_mapping(string $path, string $sheet_name = "Spray Drains"): array {
+function extract_spray_group(string $maint_norm): string {
+    if ($maint_norm === "") return "";
+    // Try regex for common patterns: "52W SPRAY DRAIN(S) X"
+    if (preg_match('/\\b52W\\s+SPRAY\\s+DRAINS?\\s+([A-Z0-9-]+)\\b/', $maint_norm, $m)) {
+        return $m[1];
+    }
+    if (preg_match('/\\bSPRAY\\s+DRAINS?\\s+([A-Z0-9-]+)\\b/', $maint_norm, $m)) {
+        return $m[1];
+    }
+    $toks = explode(" ", $maint_norm);
+    $len = count($toks);
+    for ($i = 0; $i < $len - 1; $i++) {
+        if ($toks[$i] === "SPRAY" && in_array($toks[$i + 1], ["DRAIN", "DRAINS"], true)) {
+            for ($j = $i + 2; $j < $len; $j++) {
+                if ($toks[$j] !== "" && $toks[$j] !== "DRAIN" && $toks[$j] !== "DRAINS") {
+                    return $toks[$j];
+                }
+            }
+        }
+    }
+    return "";
+}
+
+function work_list_mapping(string $path, string $sheet_name = ""): array {
     $po = "";
     $mapping = [];
     if (!file_exists($path)) return [$po, $mapping];
     if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) return [$po, $mapping];
     require_once dirname(__DIR__) . "/vendor/autoload.php";
     $wb = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
-    $ws = $wb->sheetNameExists($sheet_name) ? $wb->getSheetByName($sheet_name) : $wb->getSheet(0);
-    $po_raw = $ws->getCell("A1")->getValue();
-    if (!$po_raw) $po_raw = $ws->getCell("B1")->getValue();
-    if (!$po_raw) $po_raw = $ws->getCell("C1")->getValue();
-    $po = $po_raw !== null ? trim((string)$po_raw) : "";
 
-    $header_row = 2;
-    $max_row = $ws->getHighestRow();
-    $max_col = min(120, $ws->getHighestColumn());
-    $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
-    for ($r = 1; $r <= min($max_row, 80); $r++) {
-        $row = [];
-        for ($c = 1; $c <= $max_col_idx; $c++) {
-            $row[] = norm_str(cell_value($ws, $c, $r));
-        }
-        if ((in_array("MI", $row, true) || in_array("MI #", $row, true)) &&
-            (in_array("MAINTITEM TEXT", $row, true) || in_array("LOCATION GROUPING", $row, true))) {
-            $header_row = $r;
-            break;
+    $sheets = [];
+    if ($sheet_name !== "" && $wb->sheetNameExists($sheet_name)) {
+        $sheets[] = $wb->getSheetByName($sheet_name);
+    } else {
+        foreach ($wb->getWorksheetIterator() as $ws) {
+            $sheets[] = $ws;
         }
     }
 
-    $mi_col = null;
-    $maint_col = null;
-    for ($c = 1; $c <= $max_col_idx; $c++) {
-        $h = norm_str(cell_value($ws, $c, $header_row));
-        if ($h === "MI" || $h === "MI #") $mi_col = $c;
-        if ($h === "MAINTITEM TEXT") $maint_col = $c;
-    }
-    if ($maint_col === null) {
-        for ($c = 1; $c <= $max_col_idx; $c++) {
-            $h = norm_str(cell_value($ws, $c, $header_row));
-            if ($h === "LOCATION GROUPING") { $maint_col = $c; break; }
-        }
-    }
-    if ($mi_col === null) $mi_col = 2;
-    if ($maint_col === null) return [$po, $mapping];
+    $best_mapping = [];
+    $best_po = "";
+    foreach ($sheets as $ws) {
+        $po_raw = $ws->getCell("A1")->getValue();
+        if (!$po_raw) $po_raw = $ws->getCell("B1")->getValue();
+        if (!$po_raw) $po_raw = $ws->getCell("C1")->getValue();
+        $sheet_po = $po_raw !== null ? trim((string)$po_raw) : "";
 
-    for ($r = $header_row + 1; $r <= $max_row; $r++) {
-        $mi = cell_value($ws, $mi_col, $r);
-        $maint = cell_value($ws, $maint_col, $r);
-        if (!$mi || !$maint) continue;
-        $mi_s = trim((string)$mi);
-        if ($mi_s === "") continue;
-        $t = norm_str($maint);
-        if ($t === "") continue;
-        $toks = explode(" ", $t);
-        $prefix = ["52W", "SPRAY", "DRAINS"];
-        $group = "";
-        $len = count($toks);
-        for ($i = 0; $i <= $len - count($prefix); $i++) {
-            if (array_slice($toks, $i, count($prefix)) === $prefix) {
-                $j = $i + count($prefix);
-                $group = $toks[$j] ?? "";
+        $header_row = 2;
+        $max_row = $ws->getHighestRow();
+        $max_col = min(120, $ws->getHighestColumn());
+        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
+        for ($r = 1; $r <= min($max_row, 80); $r++) {
+            $row = [];
+            for ($c = 1; $c <= $max_col_idx; $c++) {
+                $row[] = norm_str(cell_value($ws, $c, $r));
+            }
+            if ((in_array("MI", $row, true) || in_array("MI #", $row, true)) &&
+                (in_array("MAINTITEM TEXT", $row, true) || in_array("LOCATION GROUPING", $row, true))) {
+                $header_row = $r;
                 break;
             }
         }
-        if ($group === "") continue;
-        $mapping[$group] = $mi_s;
+
+        $mi_col = null;
+        $maint_col = null;
+        for ($c = 1; $c <= $max_col_idx; $c++) {
+            $h = norm_str(cell_value($ws, $c, $header_row));
+            if ($h === "MI" || $h === "MI #") $mi_col = $c;
+            if ($h === "MAINTITEM TEXT") $maint_col = $c;
+        }
+        if ($maint_col === null) {
+            for ($c = 1; $c <= $max_col_idx; $c++) {
+                $h = norm_str(cell_value($ws, $c, $header_row));
+                if ($h === "LOCATION GROUPING") { $maint_col = $c; break; }
+            }
+        }
+        if ($mi_col === null) $mi_col = 2;
+        if ($maint_col === null) continue;
+
+        $sheet_mapping = [];
+        for ($r = $header_row + 1; $r <= $max_row; $r++) {
+            $mi = cell_value($ws, $mi_col, $r);
+            $maint = cell_value($ws, $maint_col, $r);
+            if (!$mi || !$maint) continue;
+            $mi_s = trim((string)$mi);
+            if ($mi_s === "") continue;
+            $t = norm_str($maint);
+            if ($t === "") continue;
+            $group = extract_spray_group($t);
+            if ($group === "") continue;
+            $sheet_mapping[$group] = $mi_s;
+        }
+
+        if (count($sheet_mapping) > count($best_mapping)) {
+            $best_mapping = $sheet_mapping;
+            $best_po = $sheet_po;
+        }
     }
-    return [$po, $mapping];
+
+    return [$best_po, $best_mapping];
 }
 
 function load_work_list_rows(string $path, string $sheet_name): array {
@@ -845,7 +878,7 @@ if ($action === "reset_from_uploads" && $method === "POST") {
 
     // Spray jobs from spray list (with segments)
     $spray_rows = spray_list_rows($spray_path);
-    [$po, $mapping] = work_list_mapping($work_path, "Spray Drains");
+    [$po, $mapping] = work_list_mapping($work_path, "");
     foreach ($spray_rows as $r) {
         $base = strip_segment_suffix($r["drain"]);
         $group = first_token_norm($base);
