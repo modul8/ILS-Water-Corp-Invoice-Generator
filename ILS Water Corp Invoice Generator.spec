@@ -3,12 +3,15 @@
 
 import os
 import sys
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all
 
 root = os.getcwd()
 sys.path.insert(0, root)
 
-hidden = [
+ui_datas, ui_binaries, ui_hidden = collect_all('ui')
+svc_datas, svc_binaries, svc_hidden = collect_all('services')
+
+hidden = list(set(ui_hidden + svc_hidden + [
     'ui.invoice_screen',
     'ui.shell',
     'ui.home_screen',
@@ -16,15 +19,13 @@ hidden = [
     'ui.work_sheet_screen',
     'ui.wizard',
     'ui.placeholder_screens',
-]
-hidden += collect_submodules('ui')
-hidden += collect_submodules('services')
+]))
 
 a = Analysis(
     ['app.py'],
     pathex=[root],
-    binaries=[],
-    datas=[
+    binaries=ui_binaries + svc_binaries,
+    datas=ui_datas + svc_datas + [
         ('assets\\ILS_WC.png', 'assets'),
         ('assets\\gps.png', 'assets'),
         ('assets\\ILS LOGO.png', 'assets'),
