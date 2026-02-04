@@ -346,8 +346,9 @@ function work_list_mapping(string $path, string $sheet_name = ""): array {
 
         $header_row = 2;
         $max_row = $ws->getHighestRow();
-        $max_col = min(120, $ws->getHighestColumn());
-        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
+        $max_col_str = $ws->getHighestColumn();
+        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col_str);
+        $max_col_idx = min(120, $max_col_idx);
         for ($r = 1; $r <= min($max_row, 80); $r++) {
             $row = [];
             for ($c = 1; $c <= $max_col_idx; $c++) {
@@ -433,8 +434,9 @@ function work_list_mapping_debug(string $path): array {
 
         $header_row = 2;
         $max_row = $ws->getHighestRow();
-        $max_col = min(120, $ws->getHighestColumn());
-        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
+        $max_col_str = $ws->getHighestColumn();
+        $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col_str);
+        $max_col_idx = min(120, $max_col_idx);
         for ($r = 1; $r <= min($max_row, 80); $r++) {
             $row = [];
             for ($c = 1; $c <= $max_col_idx; $c++) {
