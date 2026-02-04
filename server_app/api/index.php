@@ -218,8 +218,8 @@ function spray_list_rows(string $path): array {
         $max_row = $ws->getHighestRow();
         $scan_to = min($max_row, 60);
         for ($r = 1; $r <= $scan_to; $r++) {
-            $a_norm = norm_str($ws->getCellByColumnAndRow(1, $r)->getValue());
-            $d_norm = norm_str($ws->getCellByColumnAndRow(4, $r)->getValue());
+            $a_norm = norm_str(cell_value($ws, 1, $r));
+            $d_norm = norm_str(cell_value($ws, 4, $r));
             if ($a_norm === "DRAIN NAME") { $header_row = $r; break; }
             if (strpos($a_norm, "DRAIN") !== false && in_array($d_norm, ["TOTAL DIST", "TOTAL DISTANCE"], true)) {
                 $header_row = $r; break;
@@ -316,7 +316,7 @@ function work_list_mapping(string $path, string $sheet_name = "Spray Drains"): a
     for ($r = 1; $r <= min($max_row, 80); $r++) {
         $row = [];
         for ($c = 1; $c <= $max_col_idx; $c++) {
-            $row[] = norm_str($ws->getCellByColumnAndRow($c, $r)->getValue());
+            $row[] = norm_str(cell_value($ws, $c, $r));
         }
         if ((in_array("MI", $row, true) || in_array("MI #", $row, true)) &&
             (in_array("MAINTITEM TEXT", $row, true) || in_array("LOCATION GROUPING", $row, true))) {
@@ -328,13 +328,13 @@ function work_list_mapping(string $path, string $sheet_name = "Spray Drains"): a
     $mi_col = null;
     $maint_col = null;
     for ($c = 1; $c <= $max_col_idx; $c++) {
-        $h = norm_str($ws->getCellByColumnAndRow($c, $header_row)->getValue());
+        $h = norm_str(cell_value($ws, $c, $header_row));
         if ($h === "MI" || $h === "MI #") $mi_col = $c;
         if ($h === "MAINTITEM TEXT") $maint_col = $c;
     }
     if ($maint_col === null) {
         for ($c = 1; $c <= $max_col_idx; $c++) {
-            $h = norm_str($ws->getCellByColumnAndRow($c, $header_row)->getValue());
+            $h = norm_str(cell_value($ws, $c, $header_row));
             if ($h === "LOCATION GROUPING") { $maint_col = $c; break; }
         }
     }
@@ -342,8 +342,8 @@ function work_list_mapping(string $path, string $sheet_name = "Spray Drains"): a
     if ($maint_col === null) return [$po, $mapping];
 
     for ($r = $header_row + 1; $r <= $max_row; $r++) {
-        $mi = $ws->getCellByColumnAndRow($mi_col, $r)->getValue();
-        $maint = $ws->getCellByColumnAndRow($maint_col, $r)->getValue();
+        $mi = cell_value($ws, $mi_col, $r);
+        $maint = cell_value($ws, $maint_col, $r);
         if (!$mi || !$maint) continue;
         $mi_s = trim((string)$mi);
         if ($mi_s === "") continue;
@@ -376,15 +376,15 @@ function load_work_list_rows(string $path, string $sheet_name): array {
     $ws = $wb->getSheetByName($sheet_name);
     $po = "";
     for ($c = 1; $c <= 20; $c++) {
-        $v = $ws->getCellByColumnAndRow($c, 1)->getValue();
+        $v = cell_value($ws, $c, 1);
         if ($v !== null && trim((string)$v) !== "") { $po = trim((string)$v); break; }
     }
     $max_row = $ws->getHighestRow();
     for ($r = 3; $r <= $max_row; $r++) {
-        $a = $ws->getCellByColumnAndRow(1, $r)->getValue(); // MP #
-        $b = $ws->getCellByColumnAndRow(2, $r)->getValue(); // MI # (WO)
-        $d = $ws->getCellByColumnAndRow(4, $r)->getValue(); // Suburb/Town
-        $e = $ws->getCellByColumnAndRow(5, $r)->getValue(); // Call Date
+        $a = cell_value($ws, 1, $r); // MP #
+        $b = cell_value($ws, 2, $r); // MI # (WO)
+        $d = cell_value($ws, 4, $r); // Suburb/Town
+        $e = cell_value($ws, 5, $r); // Call Date
         if ($a === null && $b === null && $d === null && $e === null) continue;
         if (is_string($a) && strtolower(trim($a)) === "mp #") continue;
         $wo = $b !== null ? trim((string)$b) : "";
