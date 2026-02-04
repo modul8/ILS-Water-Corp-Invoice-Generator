@@ -987,6 +987,7 @@ if ($action === "reset_from_uploads" && $method === "POST") {
     }
 
     $jobs_payload = [];
+    $seen_job_keys = [];
 
     // Spray jobs from spray list (with segments)
     $spray_rows = spray_list_rows($spray_path);
@@ -995,8 +996,13 @@ if ($action === "reset_from_uploads" && $method === "POST") {
         $base = strip_segment_suffix($r["drain"]);
         $group = first_token_norm($base);
         $wo = ($group !== "" && isset($mapping[$group])) ? $mapping[$group] : "";
+        $job_key = $r["sheet"] . "|" . ($r["catchment"] ?? "") . "|" . $r["drain"];
+        if (isset($seen_job_keys[$job_key])) {
+            continue;
+        }
+        $seen_job_keys[$job_key] = true;
         $jobs_payload[] = [
-            "job_key" => $r["sheet"] . "|" . ($r["catchment"] ?? "") . "|" . $r["drain"],
+            "job_key" => $job_key,
             "module" => "drain",
             "job_type" => "Drain spraying",
             "sheet" => $r["sheet"],
@@ -1038,8 +1044,13 @@ if ($action === "reset_from_uploads" && $method === "POST") {
         [$module_id, $sheet_name, $unit] = $m;
         $rows = load_work_list_rows($work_path, $sheet_name);
         foreach ($rows as $r) {
+            $job_key = $module_id . ":" . $sheet_name . ":" . $r["wo"];
+            if (isset($seen_job_keys[$job_key])) {
+                continue;
+            }
+            $seen_job_keys[$job_key] = true;
             $jobs_payload[] = [
-                "job_key" => $module_id . ":" . $sheet_name . ":" . $r["wo"],
+                "job_key" => $job_key,
                 "module" => $module_id,
                 "job_type" => $sheet_name,
                 "sheet" => $sheet_name,
