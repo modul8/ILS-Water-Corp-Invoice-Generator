@@ -447,6 +447,11 @@ function work_list_mapping_debug(string $path): array {
             }
         }
         $info["header_row"] = $header_row;
+        $header_vals = [];
+        for ($c = 1; $c <= min($max_col_idx, 40); $c++) {
+            $header_vals[] = norm_str(cell_value($ws, $c, $header_row));
+        }
+        $info["header_values"] = $header_vals;
 
         $mi_col = null;
         $maint_col = null;
