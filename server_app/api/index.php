@@ -119,6 +119,221 @@ function photos_base_url(array $cfg): string {
     return $scheme . "://" . $host;
 }
 
+function norm_str($s): string {
+    if ($s === null) return "";
+    $s = strtoupper((string)$s);
+    $s = preg_replace('/[^A-Z0-9]+/', ' ', $s);
+    $s = preg_replace('/\s+/', ' ', $s);
+    return trim($s);
+}
+
+function safe_float_val($x): ?float {
+    if ($x === null) return null;
+    if (is_int($x) || is_float($x)) return (float)$x;
+    $s = trim((string)$x);
+    if ($s === "") return null;
+    $s = str_replace(",", "", $s);
+    if (!is_numeric($s)) return null;
+    return (float)$s;
+}
+
+function first_token_norm($s): string {
+    $t = norm_str($s);
+    if ($t === "") return "";
+    $parts = explode(" ", $t);
+    return $parts[0] ?? "";
+}
+
+function strip_segment_suffix(string $name): string {
+    if (preg_match('/^(.*)\\([0-9.]+\\s*-\\s*[0-9.]+\\)\\s*$/', $name, $m)) {
+        return trim($m[1]);
+    }
+    return $name;
+}
+
+function spray_list_rows(string $path): array {
+    $rows = [];
+    if (!file_exists($path)) return $rows;
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) return $rows;
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+    $wb = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+    foreach ($wb->getWorksheetIterator() as $ws) {
+        $current_catchment = null;
+        $header_row = 0;
+        $max_row = $ws->getHighestRow();
+        $scan_to = min($max_row, 60);
+        for ($r = 1; $r <= $scan_to; $r++) {
+            $a_norm = norm_str($ws->getCellByColumnAndRow(1, $r)->getValue());
+            $d_norm = norm_str($ws->getCellByColumnAndRow(4, $r)->getValue());
+            if ($a_norm === "DRAIN NAME") { $header_row = $r; break; }
+            if (strpos($a_norm, "DRAIN") !== false && in_array($d_norm, ["TOTAL DIST", "TOTAL DISTANCE"], true)) {
+                $header_row = $r; break;
+            }
+        }
+        $start_row = $header_row ? $header_row + 1 : 2;
+        $last_drain = "";
+        for ($r = $start_row; $r <= $max_row; $r++) {
+            $a = $ws->getCellByColumnAndRow(1, $r)->getValue();
+            $b = $ws->getCellByColumnAndRow(2, $r)->getValue();
+            $c = $ws->getCellByColumnAndRow(3, $r)->getValue();
+            $d = $ws->getCellByColumnAndRow(4, $r)->getValue();
+            $lat_raw = $ws->getCellByColumnAndRow(6, $r)->getValue();
+            $lon_raw = $ws->getCellByColumnAndRow(7, $r)->getValue();
+
+            $a_str = $a !== null ? trim((string)$a) : "";
+            $a_norm = norm_str($a_str);
+            if ($a_str === "" && ($d === null || trim((string)$d) === "")) {
+                continue;
+            }
+            if ($a_str !== "" && strpos($a_norm, "CATCHMENT") !== false && ($d === null || trim((string)$d) === "")) {
+                $current_catchment = $a_str;
+                continue;
+            }
+            if (in_array($a_norm, ["DRAIN NAME", "TOTAL DIST", "TOTAL DISTANCE"], true)) continue;
+            if (strpos($a_norm, "TOTAL ") === 0) continue;
+
+            $drain = $a_str;
+            if ($drain === "") {
+                if ($last_drain === "") continue;
+                $drain = $last_drain;
+            } else {
+                $last_drain = $drain;
+            }
+
+            $start_m = safe_float_val($b);
+            $end_m = safe_float_val($c);
+            if ($start_m !== null && $end_m !== null) {
+                $fmt = function ($x) { return (floor($x) == $x) ? (string)(int)$x : (string)$x; };
+                $drain = $drain . " (" . $fmt($start_m) . "-" . $fmt($end_m) . ")";
+            }
+
+            $dist = safe_float_val($d);
+            if ($dist === null && $start_m !== null && $end_m !== null && $end_m >= $start_m) {
+                $dist = $end_m - $start_m;
+            }
+            if ($dist === null) continue;
+
+            $rows[] = [
+                "sheet" => $ws->getTitle(),
+                "catchment" => $current_catchment ?? "",
+                "drain" => $drain,
+                "distance_m" => (float)$dist,
+                "qty_km" => round(((float)$dist) / 1000.0, 2),
+                "start_m" => $start_m,
+                "end_m" => $end_m,
+                "lat" => safe_float_val($lat_raw),
+                "lon" => safe_float_val($lon_raw),
+            ];
+        }
+    }
+    return $rows;
+}
+
+function work_list_mapping(string $path, string $sheet_name = "Spray Drains"): array {
+    $po = "";
+    $mapping = [];
+    if (!file_exists($path)) return [$po, $mapping];
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) return [$po, $mapping];
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+    $wb = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+    $ws = $wb->sheetNameExists($sheet_name) ? $wb->getSheetByName($sheet_name) : $wb->getSheet(0);
+    $po_raw = $ws->getCell("A1")->getValue();
+    if (!$po_raw) $po_raw = $ws->getCell("B1")->getValue();
+    if (!$po_raw) $po_raw = $ws->getCell("C1")->getValue();
+    $po = $po_raw !== null ? trim((string)$po_raw) : "";
+
+    $header_row = 2;
+    $max_row = $ws->getHighestRow();
+    $max_col = min(120, $ws->getHighestColumn());
+    $max_col_idx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($max_col);
+    for ($r = 1; $r <= min($max_row, 80); $r++) {
+        $row = [];
+        for ($c = 1; $c <= $max_col_idx; $c++) {
+            $row[] = norm_str($ws->getCellByColumnAndRow($c, $r)->getValue());
+        }
+        if ((in_array("MI", $row, true) || in_array("MI #", $row, true)) &&
+            (in_array("MAINTITEM TEXT", $row, true) || in_array("LOCATION GROUPING", $row, true))) {
+            $header_row = $r;
+            break;
+        }
+    }
+
+    $mi_col = null;
+    $maint_col = null;
+    for ($c = 1; $c <= $max_col_idx; $c++) {
+        $h = norm_str($ws->getCellByColumnAndRow($c, $header_row)->getValue());
+        if ($h === "MI" || $h === "MI #") $mi_col = $c;
+        if ($h === "MAINTITEM TEXT") $maint_col = $c;
+    }
+    if ($maint_col === null) {
+        for ($c = 1; $c <= $max_col_idx; $c++) {
+            $h = norm_str($ws->getCellByColumnAndRow($c, $header_row)->getValue());
+            if ($h === "LOCATION GROUPING") { $maint_col = $c; break; }
+        }
+    }
+    if ($mi_col === null) $mi_col = 2;
+    if ($maint_col === null) return [$po, $mapping];
+
+    for ($r = $header_row + 1; $r <= $max_row; $r++) {
+        $mi = $ws->getCellByColumnAndRow($mi_col, $r)->getValue();
+        $maint = $ws->getCellByColumnAndRow($maint_col, $r)->getValue();
+        if (!$mi || !$maint) continue;
+        $mi_s = trim((string)$mi);
+        if ($mi_s === "") continue;
+        $t = norm_str($maint);
+        if ($t === "") continue;
+        $toks = explode(" ", $t);
+        $prefix = ["52W", "SPRAY", "DRAINS"];
+        $group = "";
+        $len = count($toks);
+        for ($i = 0; $i <= $len - count($prefix); $i++) {
+            if (array_slice($toks, $i, count($prefix)) === $prefix) {
+                $j = $i + count($prefix);
+                $group = $toks[$j] ?? "";
+                break;
+            }
+        }
+        if ($group === "") continue;
+        $mapping[$group] = $mi_s;
+    }
+    return [$po, $mapping];
+}
+
+function load_work_list_rows(string $path, string $sheet_name): array {
+    $rows = [];
+    if (!file_exists($path)) return $rows;
+    if (!file_exists(dirname(__DIR__) . "/vendor/autoload.php")) return $rows;
+    require_once dirname(__DIR__) . "/vendor/autoload.php";
+    $wb = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+    if (!$wb->sheetNameExists($sheet_name)) return $rows;
+    $ws = $wb->getSheetByName($sheet_name);
+    $po = "";
+    for ($c = 1; $c <= 20; $c++) {
+        $v = $ws->getCellByColumnAndRow($c, 1)->getValue();
+        if ($v !== null && trim((string)$v) !== "") { $po = trim((string)$v); break; }
+    }
+    $max_row = $ws->getHighestRow();
+    for ($r = 3; $r <= $max_row; $r++) {
+        $a = $ws->getCellByColumnAndRow(1, $r)->getValue(); // MP #
+        $b = $ws->getCellByColumnAndRow(2, $r)->getValue(); // MI # (WO)
+        $d = $ws->getCellByColumnAndRow(4, $r)->getValue(); // Suburb/Town
+        $e = $ws->getCellByColumnAndRow(5, $r)->getValue(); // Call Date
+        if ($a === null && $b === null && $d === null && $e === null) continue;
+        if (is_string($a) && strtolower(trim($a)) === "mp #") continue;
+        $wo = $b !== null ? trim((string)$b) : "";
+        if ($wo === "") continue;
+        $rows[] = [
+            "sheet" => $sheet_name,
+            "mp" => $a !== null ? trim((string)$a) : "",
+            "wo" => $wo,
+            "location" => $d !== null ? trim((string)$d) : "",
+            "call_date" => $e !== null ? trim((string)$e) : "",
+            "po" => $po,
+        ];
+    }
+    return $rows;
+}
+
 function log_change(string $action, string $job_key, array $fields = []): void {
     $cfg = $GLOBALS["CFG"] ?? [];
     $log_path = $cfg["change_log_path"] ?? "/var/log/ils_app_changes.log";
@@ -508,6 +723,183 @@ if ($action === "delete_photo" && $method === "POST") {
     $stmt->execute([":id" => $id]);
     log_change("delete_photo", "photo:" . $id, ["path" => $path]);
     echo json_encode(["ok" => true]);
+    exit;
+}
+
+if ($action === "reset_from_uploads" && $method === "POST") {
+    $body = form_or_json();
+    $confirm = isset($body["confirm"]) ? (string)$body["confirm"] : "";
+    $delete_photos = isset($body["delete_photos"]) ? (int)$body["delete_photos"] : 1;
+    if ($confirm !== "YES_DELETE_ALL") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_confirm"]);
+        exit;
+    }
+
+    $spray_path = master_spray_list($cfg);
+    $work_path = latest_upload("work_list_");
+    if ($spray_path === "" || $work_path === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_uploads", "spray" => $spray_path, "work" => $work_path]);
+        exit;
+    }
+
+    try {
+        $pdo->exec("DELETE FROM jobs");
+        if ($delete_photos) {
+            $pdo->exec("DELETE FROM photos");
+            $photos_dir = ensure_upload_dir() . "/job_photos";
+            if (is_dir($photos_dir)) {
+                $it = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($photos_dir, FilesystemIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::CHILD_FIRST
+                );
+                foreach ($it as $file) {
+                    if ($file->isDir()) {
+                        @rmdir($file->getPathname());
+                    } else {
+                        @unlink($file->getPathname());
+                    }
+                }
+            }
+        }
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(["ok" => false, "error" => "delete_failed", "detail" => $e->getMessage()]);
+        exit;
+    }
+
+    $jobs_payload = [];
+
+    // Spray jobs from spray list (with segments)
+    $spray_rows = spray_list_rows($spray_path);
+    [$po, $mapping] = work_list_mapping($work_path, "Spray Drains");
+    foreach ($spray_rows as $r) {
+        $base = strip_segment_suffix($r["drain"]);
+        $group = first_token_norm($base);
+        $wo = ($group !== "" && isset($mapping[$group])) ? $mapping[$group] : "";
+        $jobs_payload[] = [
+            "job_key" => $r["sheet"] . "|" . ($r["catchment"] ?? "") . "|" . $r["drain"],
+            "module" => "drain",
+            "job_type" => "Drain spraying",
+            "sheet" => $r["sheet"],
+            "item" => $r["drain"],
+            "lat" => $r["lat"],
+            "lon" => $r["lon"],
+            "work_order" => $wo,
+            "po" => $wo !== "" ? $po : "",
+            "unit" => "km",
+            "qty_default" => (float)$r["qty_km"],
+            "completed" => 0,
+            "completed_at" => "",
+            "invoiced" => 0,
+            "invoiced_at" => "",
+            "qty" => null,
+            "current_work" => 0,
+            "meta" => json_encode([
+                "sheet" => $r["sheet"],
+                "catchment" => $r["catchment"] ?? "",
+                "drain" => $r["drain"],
+                "qty_km" => (float)$r["qty_km"],
+                "start_m" => $r["start_m"],
+                "end_m" => $r["end_m"],
+                "work_order" => $wo,
+                "po" => $wo !== "" ? $po : "",
+                "lat" => $r["lat"],
+                "lon" => $r["lon"],
+            ], JSON_UNESCAPED_SLASHES),
+        ];
+    }
+
+    // Work list modules
+    $modules = [
+        ["weeds", "Noxious Weeds", "hour"],
+        ["tracks", "Mtn Access Tracks", "km"],
+        ["fire", "Fire Zone", "each"],
+    ];
+    foreach ($modules as $m) {
+        [$module_id, $sheet_name, $unit] = $m;
+        $rows = load_work_list_rows($work_path, $sheet_name);
+        foreach ($rows as $r) {
+            $jobs_payload[] = [
+                "job_key" => $module_id . ":" . $sheet_name . ":" . $r["wo"],
+                "module" => $module_id,
+                "job_type" => $sheet_name,
+                "sheet" => $sheet_name,
+                "item" => $r["location"],
+                "lat" => null,
+                "lon" => null,
+                "work_order" => $r["wo"],
+                "po" => $r["po"],
+                "unit" => $unit,
+                "qty_default" => null,
+                "completed" => 0,
+                "completed_at" => "",
+                "invoiced" => 0,
+                "invoiced_at" => "",
+                "qty" => null,
+                "current_work" => 0,
+                "meta" => json_encode([
+                    "location" => $r["location"],
+                    "call_date" => $r["call_date"],
+                    "sheet" => $sheet_name,
+                ], JSON_UNESCAPED_SLASHES),
+            ];
+        }
+    }
+
+    if (!$jobs_payload) {
+        echo json_encode(["ok" => false, "error" => "no_jobs"]);
+        exit;
+    }
+
+    $sql = "INSERT INTO jobs
+        (job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
+        VALUES
+        (:job_key, :module, :job_type, :sheet, :item, :lat, :lon, :work_order, :po, :unit, :qty_default, :completed, :completed_at, :invoiced, :invoiced_at, :qty, :current_work, :meta)
+        ON DUPLICATE KEY UPDATE
+        module = VALUES(module),
+        job_type = VALUES(job_type),
+        sheet = VALUES(sheet),
+        item = VALUES(item),
+        lat = VALUES(lat),
+        lon = VALUES(lon),
+        work_order = VALUES(work_order),
+        po = VALUES(po),
+        unit = VALUES(unit),
+        qty_default = VALUES(qty_default),
+        completed = VALUES(completed),
+        completed_at = VALUES(completed_at),
+        invoiced = VALUES(invoiced),
+        invoiced_at = VALUES(invoiced_at),
+        qty = VALUES(qty),
+        current_work = VALUES(current_work)";
+    $stmt = $pdo->prepare($sql);
+    foreach ($jobs_payload as $j) {
+        $stmt->execute([
+            ":job_key" => $j["job_key"],
+            ":module" => $j["module"],
+            ":job_type" => $j["job_type"],
+            ":sheet" => $j["sheet"],
+            ":item" => $j["item"],
+            ":lat" => $j["lat"],
+            ":lon" => $j["lon"],
+            ":work_order" => $j["work_order"],
+            ":po" => $j["po"],
+            ":unit" => $j["unit"],
+            ":qty_default" => $j["qty_default"],
+            ":completed" => $j["completed"],
+            ":completed_at" => norm_date($j["completed_at"] ?? null),
+            ":invoiced" => $j["invoiced"],
+            ":invoiced_at" => norm_date($j["invoiced_at"] ?? null),
+            ":qty" => $j["qty"],
+            ":current_work" => $j["current_work"],
+            ":meta" => $j["meta"],
+        ]);
+    }
+
+    log_change("reset_from_uploads", "all", ["jobs" => count($jobs_payload), "spray" => basename($spray_path), "work" => basename($work_path)]);
+    echo json_encode(["ok" => true, "jobs" => count($jobs_payload), "spray" => basename($spray_path), "work" => basename($work_path)]);
     exit;
 }
 
