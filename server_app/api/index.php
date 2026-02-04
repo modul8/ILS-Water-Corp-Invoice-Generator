@@ -1233,6 +1233,55 @@ if ($action === "cleanup_segment_bases" && $method === "POST") {
     exit;
 }
 
+if ($action === "cleanup_duplicate_drains" && $method === "POST") {
+    $body = form_or_json();
+    $confirm = isset($body["confirm"]) ? (string)$body["confirm"] : "";
+    if ($confirm !== "YES_CLEANUP") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_confirm"]);
+        exit;
+    }
+    $stmt = $pdo->prepare("SELECT job_key, sheet, item, meta, updated_at FROM jobs WHERE module = 'drain'");
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $keepers = [];
+    $duplicates = [];
+    foreach ($rows as $r) {
+        $sheet = $r["sheet"] ?? "";
+        $item = $r["item"] ?? "";
+        $meta = [];
+        if (isset($r["meta"]) && is_string($r["meta"]) && trim($r["meta"]) !== "") {
+            $parsed = json_decode($r["meta"], true);
+            if (is_array($parsed)) $meta = $parsed;
+        }
+        $catchment = $meta["catchment"] ?? "";
+        $key = norm_str($sheet) . "|" . norm_str($catchment) . "|" . norm_str($item);
+        $existing = $keepers[$key] ?? null;
+        if (!$existing) {
+            $keepers[$key] = $r;
+            continue;
+        }
+        $existing_ts = $existing["updated_at"] ?? "";
+        $curr_ts = $r["updated_at"] ?? "";
+        if ($curr_ts > $existing_ts) {
+            $duplicates[] = $existing["job_key"];
+            $keepers[$key] = $r;
+        } else {
+            $duplicates[] = $r["job_key"];
+        }
+    }
+    if (!$duplicates) {
+        echo json_encode(["ok" => true, "deleted" => 0]);
+        exit;
+    }
+    $in = implode(",", array_fill(0, count($duplicates), "?"));
+    $del = $pdo->prepare("DELETE FROM jobs WHERE job_key IN ($in)");
+    $del->execute($duplicates);
+    log_change("cleanup_duplicate_drains", "all", ["deleted" => count($duplicates)]);
+    echo json_encode(["ok" => true, "deleted" => count($duplicates)]);
+    exit;
+}
+
 if ($action === "update_pin" && $method === "POST") {
     $body = form_or_json();
     $job_key = isset($body["job_key"]) ? trim($body["job_key"]) : "";
