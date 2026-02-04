@@ -36,7 +36,8 @@ jobs:
 
       - name: Build exe (PyInstaller)
         run: |
-          python -m PyInstaller "ILS Water Corp Invoice Generator.spec" --collect-all ui --collect-all services
+          $env:PYTHONPATH = "$env:GITHUB_WORKSPACE"
+          python -m PyInstaller "ILS Water Corp Invoice Generator.spec"
 
       - name: Install Inno Setup
         run: choco install innosetup -y
