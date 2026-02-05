@@ -50,9 +50,23 @@ try {
     exit;
 }
 
-$stmt = $pdo->prepare("SELECT id, filename, created_at FROM photos WHERE job_key = :job_key ORDER BY created_at DESC");
+$stmt = $pdo->prepare("SELECT id, filename, created_at, lat, lon FROM photos WHERE job_key = :job_key ORDER BY created_at DESC");
 $stmt->execute([":job_key" => $job_key]);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$job_lat = null;
+$job_lon = null;
+try {
+    $stmt = $pdo->prepare("SELECT lat, lon FROM jobs WHERE job_key = :job_key LIMIT 1");
+    $stmt->execute([":job_key" => $job_key]);
+    $job = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($job) {
+        $job_lat = $job["lat"] ?? null;
+        $job_lon = $job["lon"] ?? null;
+    }
+} catch (Exception $e) {
+    // ignore
+}
 
 $api_key = urlencode($cfg["api_key"] ?? "");
 ?>
@@ -79,13 +93,28 @@ $api_key = urlencode($cfg["api_key"] ?? "");
     <div>No photos found.</div>
   <?php else: ?>
     <div class="grid">
-      <?php foreach ($rows as $r): ?>
+      <?php foreach ($rows as $r):
+        $lat = $r["lat"] ?? null;
+        $lon = $r["lon"] ?? null;
+        if ($lat === null || $lat === "") $lat = $job_lat;
+        if ($lon === null || $lon === "") $lon = $job_lon;
+        $has_pin = ($lat !== null && $lat !== "" && $lon !== null && $lon !== "");
+        $map_url = $has_pin ? ("https://maps.google.com/maps?q=" . urlencode($lat . "," . $lon)) : "";
+      ?>
         <div class="card">
           <a href="photo.php?id=<?php echo (int)$r["id"]; ?>&key=<?php echo $api_key; ?>" target="_blank" rel="noopener">
             <img src="photo.php?id=<?php echo (int)$r["id"]; ?>&key=<?php echo $api_key; ?>" alt="">
           </a>
           <div class="small"><?php echo htmlspecialchars($r["filename"]); ?></div>
           <div class="small"><?php echo htmlspecialchars($r["created_at"]); ?></div>
+          <?php if ($has_pin): ?>
+            <div class="small">
+              <a href="<?php echo htmlspecialchars($map_url); ?>" target="_blank" rel="noopener">📍 Map</a>
+              (<?php echo htmlspecialchars($lat); ?>, <?php echo htmlspecialchars($lon); ?>)
+            </div>
+          <?php else: ?>
+            <div class="small">📍 No GPS</div>
+          <?php endif; ?>
           <div class="actions">
             <button class="danger" onclick="deletePhoto(<?php echo (int)$r['id']; ?>)">Delete</button>
           </div>
