@@ -140,6 +140,38 @@ function photos_base_url(array $cfg): string {
     return $scheme . "://" . $host;
 }
 
+function exif_gps_to_decimal($coord, $hem): ?float {
+    if (!is_array($coord) || count($coord) < 3) return null;
+    $parts = [];
+    foreach ($coord as $c) {
+        if (is_string($c) && strpos($c, "/") !== false) {
+            [$n, $d] = array_map("floatval", explode("/", $c, 2));
+            $parts[] = $d != 0 ? ($n / $d) : 0.0;
+        } else {
+            $parts[] = (float)$c;
+        }
+    }
+    [$deg, $min, $sec] = $parts + [0.0, 0.0, 0.0];
+    $dec = $deg + ($min / 60.0) + ($sec / 3600.0);
+    $hem = strtoupper((string)$hem);
+    if ($hem === "S" || $hem === "W") $dec *= -1.0;
+    return $dec;
+}
+
+function read_exif_gps(string $path): array {
+    if (!function_exists("exif_read_data")) return ["lat" => null, "lon" => null];
+    try {
+        $exif = @exif_read_data($path, "GPS", true);
+        if (!$exif || !isset($exif["GPS"])) return ["lat" => null, "lon" => null];
+        $gps = $exif["GPS"];
+        $lat = isset($gps["GPSLatitude"], $gps["GPSLatitudeRef"]) ? exif_gps_to_decimal($gps["GPSLatitude"], $gps["GPSLatitudeRef"]) : null;
+        $lon = isset($gps["GPSLongitude"], $gps["GPSLongitudeRef"]) ? exif_gps_to_decimal($gps["GPSLongitude"], $gps["GPSLongitudeRef"]) : null;
+        return ["lat" => $lat, "lon" => $lon];
+    } catch (Exception $e) {
+        return ["lat" => null, "lon" => null];
+    }
+}
+
 function norm_str($s): string {
     if ($s === null) return "";
     $s = strtoupper((string)$s);
@@ -912,6 +944,11 @@ if ($action === "upload_photo" && $method === "POST") {
         http_response_code(500);
         echo json_encode(["ok" => false, "error" => "save_failed"]);
         exit;
+    }
+    if ($lat === "" || $lon === "") {
+        $gps = read_exif_gps($dest);
+        if ($lat === "" && $gps["lat"] !== null) $lat = (string)$gps["lat"];
+        if ($lon === "" && $gps["lon"] !== null) $lon = (string)$gps["lon"];
     }
     $stmt = $pdo->prepare("INSERT INTO photos (job_key, filename, stored_path, lat, lon) VALUES (:job_key, :filename, :stored_path, :lat, :lon)");
     $stmt->execute([
