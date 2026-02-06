@@ -993,6 +993,42 @@ if ($action === "delete_photo" && $method === "POST") {
     exit;
 }
 
+if ($action === "backfill_photo_exif" && $method === "POST") {
+    $body = form_or_json();
+    $only_missing = !isset($body["only_missing"]) || (string)$body["only_missing"] !== "0";
+    $limit = isset($body["limit"]) ? intval($body["limit"]) : 0;
+    if ($limit < 0) $limit = 0;
+
+    $where = $only_missing ? "WHERE (lat IS NULL OR lon IS NULL)" : "";
+    $limit_sql = $limit > 0 ? (" LIMIT " . $limit) : "";
+    $stmt = $pdo->prepare("SELECT id, stored_path, lat, lon FROM photos " . $where . " ORDER BY created_at DESC" . $limit_sql);
+    $stmt->execute();
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $updated = 0;
+    $scanned = 0;
+    foreach ($rows as $row) {
+        $scanned++;
+        $path = $row["stored_path"];
+        if (!is_file($path)) continue;
+        $gps = read_exif_gps($path);
+        if ($gps["lat"] === null && $gps["lon"] === null) continue;
+        $new_lat = $gps["lat"] !== null ? (string)$gps["lat"] : $row["lat"];
+        $new_lon = $gps["lon"] !== null ? (string)$gps["lon"] : $row["lon"];
+        if ((string)$new_lat === (string)$row["lat"] && (string)$new_lon === (string)$row["lon"]) continue;
+        $upd = $pdo->prepare("UPDATE photos SET lat = :lat, lon = :lon WHERE id = :id");
+        $upd->execute([
+            ":lat" => $new_lat === "" ? null : $new_lat,
+            ":lon" => $new_lon === "" ? null : $new_lon,
+            ":id" => $row["id"],
+        ]);
+        $updated++;
+    }
+
+    echo json_encode(["ok" => true, "scanned" => $scanned, "updated" => $updated]);
+    exit;
+}
+
 if ($action === "reset_from_uploads" && $method === "POST") {
     $body = form_or_json();
     $confirm = isset($body["confirm"]) ? (string)$body["confirm"] : "";
