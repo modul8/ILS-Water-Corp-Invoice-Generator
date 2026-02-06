@@ -27,6 +27,16 @@ register_shutdown_function(function () use ($uploads_dir) {
     if ($line) {
         @file_put_contents($uploads_dir . "/php_errors.log", $line . "\n", FILE_APPEND | LOCK_EX);
     }
+    if (isset($_GET["action"]) && $_GET["action"] === "backfill_pins_from_spray" && !headers_sent()) {
+        http_response_code(500);
+        echo json_encode([
+            "ok" => false,
+            "error" => "fatal",
+            "detail" => $err["message"] ?? "",
+            "file" => $err["file"] ?? "",
+            "line" => $err["line"] ?? "",
+        ]);
+    }
 });
 $cfg = require $config_path;
 $GLOBALS["CFG"] = $cfg;
