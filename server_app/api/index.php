@@ -923,8 +923,8 @@ if ($action === "upload_photo" && $method === "POST") {
         echo json_encode(["ok" => false, "error" => "missing_file"]);
         exit;
     }
-    $lat = isset($_POST["lat"]) ? trim((string)$_POST["lat"]) : "";
-    $lon = isset($_POST["lon"]) ? trim((string)$_POST["lon"]) : "";
+    $lat_post = isset($_POST["lat"]) ? trim((string)$_POST["lat"]) : "";
+    $lon_post = isset($_POST["lon"]) ? trim((string)$_POST["lon"]) : "";
     $file = $_FILES["photo"];
     if (!is_uploaded_file($file["tmp_name"])) {
         http_response_code(400);
@@ -945,11 +945,9 @@ if ($action === "upload_photo" && $method === "POST") {
         echo json_encode(["ok" => false, "error" => "save_failed"]);
         exit;
     }
-    if ($lat === "" || $lon === "") {
-        $gps = read_exif_gps($dest);
-        if ($lat === "" && $gps["lat"] !== null) $lat = (string)$gps["lat"];
-        if ($lon === "" && $gps["lon"] !== null) $lon = (string)$gps["lon"];
-    }
+    $gps = read_exif_gps($dest);
+    $lat = $gps["lat"] !== null ? (string)$gps["lat"] : $lat_post;
+    $lon = $gps["lon"] !== null ? (string)$gps["lon"] : $lon_post;
     $stmt = $pdo->prepare("INSERT INTO photos (job_key, filename, stored_path, lat, lon) VALUES (:job_key, :filename, :stored_path, :lat, :lon)");
     $stmt->execute([
         ":job_key" => $job_key,
