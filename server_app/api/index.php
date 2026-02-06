@@ -1070,7 +1070,7 @@ if ($action === "backfill_pins_from_spray" && $method === "POST") {
 
     $sql = "UPDATE jobs SET lat = :lat, lon = :lon WHERE job_key = :job_key";
     if ($only_missing) {
-        $sql .= " AND (lat IS NULL OR lat = '' OR lon IS NULL OR lon = '')";
+        $sql .= " AND (lat IS NULL OR lon IS NULL)";
     }
     $stmt = $pdo->prepare($sql);
     $check = $pdo->prepare("SELECT 1 FROM jobs WHERE job_key = :job_key LIMIT 1");
@@ -1084,6 +1084,9 @@ if ($action === "backfill_pins_from_spray" && $method === "POST") {
         $lat = $r["lat"] ?? null;
         $lon = $r["lon"] ?? null;
         if ($lat === null || $lon === null) continue;
+        if (!is_numeric($lat) || !is_numeric($lon)) continue;
+        $lat = (float)$lat;
+        $lon = (float)$lon;
 
         $job_key = ($r["sheet"] ?? "") . "|" . ($r["catchment"] ?? "") . "|" . ($r["drain"] ?? "");
         if (isset($seen_keys[$job_key])) continue;
