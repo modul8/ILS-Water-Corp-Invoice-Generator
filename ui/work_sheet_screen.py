@@ -85,10 +85,11 @@ class WorkSheetScreen(QWidget):
 
         root.addLayout(header)
 
-        self.table = QTableWidget(0, 11)
+        self.table = QTableWidget(0, 12)
         self.table.setHorizontalHeaderLabels(
             [
                 "WO",
+                "PO",
                 "Location",
                 "Call Date",
                 "Qty",
@@ -101,7 +102,7 @@ class WorkSheetScreen(QWidget):
                 "Key",
             ]
         )
-        self.table.setColumnHidden(10, True)
+        self.table.setColumnHidden(11, True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -297,6 +298,7 @@ class WorkSheetScreen(QWidget):
 
             values = [
                 wo,
+                po,
                 r.location,
                 r.call_date,
                 qty_disp,
@@ -315,7 +317,7 @@ class WorkSheetScreen(QWidget):
                     item.setForeground(Qt.green)
                 if c == 6 and invoiced:
                     item.setForeground(Qt.cyan)
-                if c in (5, 6, 7, 8, 9):
+                if c in (6, 7, 8, 9, 10):
                     item.setTextAlignment(Qt.AlignCenter)
                 self.table.setItem(row, c, item)
 
@@ -330,18 +332,18 @@ class WorkSheetScreen(QWidget):
                 pin_item.setTextAlignment(Qt.AlignCenter)
                 pin_item.setToolTip(f"{lat}, {lon}")
                 pin_item.setData(Qt.UserRole, f"{r.location}|{lat},{lon}")
-                self.table.setItem(row, 8, pin_item)
+                self.table.setItem(row, 9, pin_item)
                 self.table.setRowHeight(row, 36)
 
             current_item = QTableWidgetItem()
             current_item.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             current_item.setCheckState(Qt.Checked if current_work else Qt.Unchecked)
             current_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 7, current_item)
+            self.table.setItem(row, 8, current_item)
 
             edit_btn = QPushButton("Edit")
             edit_btn.clicked.connect(lambda _=False, key=k: self._edit_pin(key))
-            self.table.setCellWidget(row, 9, edit_btn)
+            self.table.setCellWidget(row, 10, edit_btn)
 
         self.table.resizeColumnsToContents()
         self.table.blockSignals(False)
@@ -384,11 +386,11 @@ class WorkSheetScreen(QWidget):
         self._apply_filters()
 
     def _on_click(self, row: int, col: int) -> None:
-        if col == 3:
+        if col == 4:
             self._edit_qty(row)
             return
-        if col == 8:
-            pin_item = self.table.item(row, 8)
+        if col == 9:
+            pin_item = self.table.item(row, 9)
             if pin_item:
                 data = pin_item.data(Qt.UserRole) or ""
                 if isinstance(data, str) and "|" in data:
@@ -407,12 +409,12 @@ class WorkSheetScreen(QWidget):
             return
 
     def _on_double_click(self, row: int, col: int) -> None:
-        if col == 5:
+        if col == 6:
             self._toggle_completed(row)
             return
 
     def _toggle_completed(self, row: int) -> None:
-        k = self.table.item(row, 10).text()
+        k = self.table.item(row, 11).text()
         current = self.state_store.get(k) or {}
         completed_now = bool(current.get("completed", False))
 
@@ -462,8 +464,8 @@ class WorkSheetScreen(QWidget):
             {
                 "sheet": self.sheet_name,
                 "work_order": self.table.item(row, 0).text(),
-                "location": self.table.item(row, 1).text(),
-                "call_date": self.table.item(row, 2).text(),
+                "location": self.table.item(row, 2).text(),
+                "call_date": self.table.item(row, 3).text(),
                 "po": self.rows[row].po if row < len(self.rows) else "",
             }
         )
@@ -475,7 +477,7 @@ class WorkSheetScreen(QWidget):
         self._populate()
 
     def _edit_qty(self, row: int) -> None:
-        k = self.table.item(row, 10).text()
+        k = self.table.item(row, 11).text()
         rec = self.state_store.get(k) or {}
         if not bool(rec.get("completed", False)):
             QMessageBox.information(
@@ -504,9 +506,9 @@ class WorkSheetScreen(QWidget):
         self._populate()
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        if item.column() != 7:
+        if item.column() != 8:
             return
-        key_item = self.table.item(item.row(), 10)
+        key_item = self.table.item(item.row(), 11)
         if not key_item:
             return
         k = key_item.text()
