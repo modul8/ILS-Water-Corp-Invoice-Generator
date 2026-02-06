@@ -75,6 +75,9 @@ $api_key = urlencode($cfg["api_key"] ?? "");
 <head>
   <meta charset="utf-8">
   <title>Job Photos</title>
+  <link rel="icon" href="assets/ILS_WC.ico">
+  <link rel="shortcut icon" href="assets/ILS_WC.ico">
+  <link rel="apple-touch-icon" href="assets/ILS_WC.png">
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; color: #222; }
     .meta { margin-bottom: 16px; color: #666; }
