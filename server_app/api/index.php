@@ -1029,6 +1029,66 @@ if ($action === "backfill_photo_exif" && $method === "POST") {
     exit;
 }
 
+if ($action === "backfill_pins_from_spray" && $method === "POST") {
+    $body = form_or_json();
+    $only_missing = !isset($body["only_missing"]) || (string)$body["only_missing"] !== "0";
+    $limit = isset($body["limit"]) ? intval($body["limit"]) : 0;
+    if ($limit < 0) $limit = 0;
+
+    $spray_path = master_spray_list($cfg);
+    if ($spray_path === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "spray_list_not_found"]);
+        exit;
+    }
+
+    $rows = spray_list_rows($spray_path);
+    if (!$rows) {
+        echo json_encode(["ok" => true, "scanned" => 0, "updated" => 0, "missing_jobs" => 0]);
+        exit;
+    }
+
+    $sql = "UPDATE jobs SET lat = :lat, lon = :lon WHERE job_key = :job_key";
+    if ($only_missing) {
+        $sql .= " AND (lat IS NULL OR lat = '' OR lon IS NULL OR lon = '')";
+    }
+    $stmt = $pdo->prepare($sql);
+    $check = $pdo->prepare("SELECT 1 FROM jobs WHERE job_key = :job_key LIMIT 1");
+
+    $scanned = 0;
+    $updated = 0;
+    $missing_jobs = 0;
+    $seen_keys = [];
+    foreach ($rows as $r) {
+        if ($limit > 0 && $scanned >= $limit) break;
+        $lat = $r["lat"] ?? null;
+        $lon = $r["lon"] ?? null;
+        if ($lat === null || $lon === null) continue;
+
+        $job_key = ($r["sheet"] ?? "") . "|" . ($r["catchment"] ?? "") . "|" . ($r["drain"] ?? "");
+        if (isset($seen_keys[$job_key])) continue;
+        $seen_keys[$job_key] = true;
+
+        $scanned++;
+        $check->execute([":job_key" => $job_key]);
+        if (!$check->fetchColumn()) {
+            $missing_jobs++;
+            continue;
+        }
+
+        $stmt->execute([
+            ":lat" => $lat,
+            ":lon" => $lon,
+            ":job_key" => $job_key,
+        ]);
+        if ($stmt->rowCount() > 0) $updated++;
+    }
+
+    log_change("backfill_pins_from_spray", "all", ["scanned" => $scanned, "updated" => $updated, "missing_jobs" => $missing_jobs]);
+    echo json_encode(["ok" => true, "scanned" => $scanned, "updated" => $updated, "missing_jobs" => $missing_jobs]);
+    exit;
+}
+
 if ($action === "reset_from_uploads" && $method === "POST") {
     $body = form_or_json();
     $confirm = isset($body["confirm"]) ? (string)$body["confirm"] : "";
