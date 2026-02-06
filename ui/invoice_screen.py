@@ -250,8 +250,23 @@ class InvoiceScreen(QWidget):
                 rec["completed_at"] = j.get("completed_at")
             elif completed_val is not None and not bool(int(completed_val)):
                 rec.pop("completed_at", None)
-            if j.get("invoiced") is not None:
-                rec["invoiced"] = bool(int(j.get("invoiced")))
+            server_invoiced_val = j.get("invoiced")
+            local_invoiced = bool(rec.get("invoiced"))
+            if server_invoiced_val is not None:
+                server_invoiced = bool(int(server_invoiced_val))
+                if server_invoiced or not local_invoiced:
+                    rec["invoiced"] = server_invoiced
+                elif local_invoiced and not server_invoiced:
+                    # Server missed the invoiced update; re-assert it.
+                    try:
+                        today = date.today().isoformat()
+                        client.set_invoiced(
+                            job_key=job_key,
+                            invoiced=True,
+                            invoiced_at=rec.get("invoiced_at") or today,
+                        )
+                    except Exception:
+                        pass
             if j.get("invoiced_at"):
                 rec["invoiced_at"] = j.get("invoiced_at")
             qty = j.get("qty")

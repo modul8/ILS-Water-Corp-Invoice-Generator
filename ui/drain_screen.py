@@ -291,7 +291,12 @@ class DrainSprayingScreen(QWidget):
             rec = existing
             rec["module"] = "drain"
             rec["completed"] = bool(int(j.get("completed") or 0))
-            rec["invoiced"] = bool(int(j.get("invoiced") or 0))
+            server_invoiced_val = j.get("invoiced")
+            local_invoiced = bool(rec.get("invoiced"))
+            if server_invoiced_val is not None:
+                server_invoiced = bool(int(server_invoiced_val))
+                if server_invoiced or not local_invoiced:
+                    rec["invoiced"] = server_invoiced
             if j.get("completed_at"):
                 rec["completed_at"] = j.get("completed_at")
             else:
@@ -660,8 +665,12 @@ class DrainSprayingScreen(QWidget):
                 completed_val = j.get("completed")
                 if completed_val is not None:
                     rec["completed"] = bool(int(completed_val))
-                if j.get("invoiced") is not None:
-                    rec["invoiced"] = bool(int(j.get("invoiced")))
+                server_invoiced_val = j.get("invoiced")
+                local_invoiced = bool(rec.get("invoiced"))
+                if server_invoiced_val is not None:
+                    server_invoiced = bool(int(server_invoiced_val))
+                    if server_invoiced or not local_invoiced:
+                        rec["invoiced"] = server_invoiced
                 if j.get("current_work") is not None:
                     rec["current_work"] = bool(int(j.get("current_work")))
                 if j.get("invoiced_at"):
