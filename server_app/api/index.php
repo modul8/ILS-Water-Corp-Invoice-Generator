@@ -1042,7 +1042,17 @@ if ($action === "backfill_pins_from_spray" && $method === "POST") {
         exit;
     }
 
-    $rows = spray_list_rows($spray_path);
+    try {
+        $rows = spray_list_rows($spray_path);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            "ok" => false,
+            "error" => "spray_list_load_failed",
+            "detail" => $e->getMessage(),
+        ]);
+        exit;
+    }
     if (!$rows) {
         echo json_encode(["ok" => true, "scanned" => 0, "updated" => 0, "missing_jobs" => 0]);
         exit;
