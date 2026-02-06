@@ -58,6 +58,9 @@ class InvoiceScreen(QWidget):
         self.btn_refresh = QPushButton("Refresh")
         self.btn_refresh.clicked.connect(self.refresh)
 
+        self.btn_repush_pins = QPushButton("Repush Pins")
+        self.btn_repush_pins.clicked.connect(self.repush_pins)
+
         self.btn_mark_invoiced = QPushButton("Mark Selected\nas Invoiced")
         self.btn_mark_invoiced.clicked.connect(self.mark_selected_invoiced)
 
@@ -82,6 +85,7 @@ class InvoiceScreen(QWidget):
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(self.btn_refresh)
+        header.addWidget(self.btn_repush_pins)
         header.addWidget(self.btn_show_invoiced)
         header.addWidget(self.btn_select_all)
         header.addWidget(self.btn_select_none)
@@ -363,6 +367,58 @@ class InvoiceScreen(QWidget):
             item = self.table.item(r, 0)
             if item:
                 item.setCheckState(Qt.Unchecked)
+
+    def repush_pins(self) -> None:
+        client = self._get_sync_client()
+        if not client:
+            QMessageBox.warning(self, "Missing server settings", "Set the Field API base and key first.")
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Repush pins?",
+            "This will push any local pin coordinates back to the server for all jobs.\nContinue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        updated = 0
+        skipped = 0
+        failed = 0
+        for key, rec in self.state_store.iter_records():
+            lat = rec.get("lat")
+            lon = rec.get("lon")
+            meta = rec.get("meta") or {}
+            if lat in ("", None):
+                lat = meta.get("lat")
+            if lon in ("", None):
+                lon = meta.get("lon")
+            if lat in ("", None) or lon in ("", None):
+                skipped += 1
+                continue
+            try:
+                sheet = str(meta.get("sheet") or "")
+                drain = str(meta.get("drain") or "")
+                resp = client.update_pin(
+                    job_key=key,
+                    lat=lat,
+                    lon=lon,
+                    sheet=sheet,
+                    drain=drain,
+                )
+                if resp.get("ok"):
+                    updated += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+
+        QMessageBox.information(
+            self,
+            "Repush complete",
+            f"Pins updated: {updated}\nSkipped (no pin): {skipped}\nFailed: {failed}",
+        )
 
 
     def mark_selected_invoiced(self) -> None:

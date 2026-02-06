@@ -179,6 +179,26 @@ class FieldSyncClient:
         }
         return self._request("GET", "set_invoiced", params=params)
 
+    def update_pin(
+        self,
+        *,
+        job_key: str,
+        lat: str | float | int,
+        lon: str | float | int,
+        sheet: str = "",
+        drain: str = "",
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
+            "job_key": job_key,
+            "lat": lat,
+            "lon": lon,
+        }
+        if sheet:
+            params["sheet"] = sheet
+        if drain:
+            params["drain"] = drain
+        return self._request("POST", "update_pin", json_body=params)
+
     def upload_file(self, *, kind: str, path: str) -> Dict[str, Any]:
         url = f"{self.base_url}/api/index.php"
         params = {"action": "upload", "key": self.api_key}
