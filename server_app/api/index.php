@@ -657,6 +657,8 @@ function module_sheet_name(string $module): string {
     if ($m === "weeds") return "Noxious Weeds";
     if ($m === "tracks") return "Mtn Access Tracks";
     if ($m === "fire") return "Fire Zones";
+    if ($m === "culvert") return "Culverts";
+    if ($m === "bridge") return "Bridges";
     return $module !== "" ? $module : "Work Items";
 }
 
@@ -1510,6 +1512,83 @@ if ($action === "update_pin" && $method === "POST") {
     }
 
     echo json_encode(["ok" => true]);
+    exit;
+}
+
+if ($action === "create_asset" && $method === "POST") {
+    $body = form_or_json();
+    $module = isset($body["module"]) ? strtolower(trim((string)$body["module"])) : "";
+    $asset_id = isset($body["asset_id"]) ? trim((string)$body["asset_id"]) : "";
+    $lat = isset($body["lat"]) ? trim((string)$body["lat"]) : "";
+    $lon = isset($body["lon"]) ? trim((string)$body["lon"]) : "";
+
+    if (!in_array($module, ["culvert", "bridge"], true)) {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "invalid_module"]);
+        exit;
+    }
+    if ($asset_id === "") {
+        http_response_code(400);
+        echo json_encode(["ok" => false, "error" => "missing_asset_id"]);
+        exit;
+    }
+
+    $item = $asset_id;
+    $check = $pdo->prepare("SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
+                            FROM jobs
+                            WHERE module = :module AND UPPER(TRIM(item)) = UPPER(TRIM(:item))
+                            LIMIT 1");
+    $check->execute([
+        ":module" => $module,
+        ":item" => $item,
+    ]);
+    $existing = $check->fetch(PDO::FETCH_ASSOC);
+    if ($existing) {
+        echo json_encode(["ok" => true, "created" => false, "job" => $existing]);
+        exit;
+    }
+
+    $safe_id = preg_replace('/[^A-Za-z0-9._-]+/', "_", strtoupper($asset_id));
+    $job_key = $module . ":asset:" . $safe_id;
+    if ($job_key === $module . ":asset:") {
+        $job_key = $module . ":asset:" . date("YmdHis");
+    }
+
+    $meta = json_encode([
+        "asset_id" => $asset_id,
+        "source" => "manual_create",
+    ], JSON_UNESCAPED_SLASHES);
+
+    $insert = $pdo->prepare("INSERT INTO jobs
+        (job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta)
+        VALUES
+        (:job_key, :module, :job_type, :sheet, :item, :lat, :lon, :work_order, :po, :unit, :qty_default, 0, NULL, 0, NULL, NULL, 0, :meta)
+        ON DUPLICATE KEY UPDATE
+        item = VALUES(item),
+        lat = COALESCE(VALUES(lat), lat),
+        lon = COALESCE(VALUES(lon), lon),
+        meta = VALUES(meta)");
+    $insert->execute([
+        ":job_key" => $job_key,
+        ":module" => $module,
+        ":job_type" => module_sheet_name($module),
+        ":sheet" => module_sheet_name($module),
+        ":item" => $item,
+        ":lat" => $lat === "" ? null : $lat,
+        ":lon" => $lon === "" ? null : $lon,
+        ":work_order" => "",
+        ":po" => "",
+        ":unit" => "ea",
+        ":qty_default" => null,
+        ":meta" => $meta,
+    ]);
+    log_change("create_asset", $job_key, ["module" => $module, "asset_id" => $asset_id, "lat" => $lat, "lon" => $lon]);
+
+    $stmt = $pdo->prepare("SELECT job_key, module, job_type, sheet, item, lat, lon, work_order, po, unit, qty_default, completed, completed_at, invoiced, invoiced_at, qty, current_work, meta, updated_at
+                           FROM jobs WHERE job_key = :job_key");
+    $stmt->execute([":job_key" => $job_key]);
+    $job = $stmt->fetch(PDO::FETCH_ASSOC);
+    echo json_encode(["ok" => true, "created" => true, "job" => $job]);
     exit;
 }
 

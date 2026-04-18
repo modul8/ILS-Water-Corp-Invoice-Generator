@@ -96,6 +96,8 @@ if ($ui_password !== "") {
         <option value="weeds">Noxious Weeds</option>
         <option value="tracks">Mtn Access Tracks</option>
         <option value="fire">Fire Zones</option>
+        <option value="culvert">Culverts</option>
+        <option value="bridge">Bridges</option>
       </select>
     </div>
     <div class="controls">
@@ -118,7 +120,17 @@ function jobTypeLabel(module) {
   if (module === "weeds") return "Noxious Weeds";
   if (module === "tracks") return "Mtn Access Tracks";
   if (module === "fire") return "Fire Zones";
+  if (module === "culvert") return "Culverts";
+  if (module === "bridge") return "Bridges";
   return module || "Work Item";
+}
+
+function isAssetModule(module) {
+  return module === "culvert" || module === "bridge";
+}
+
+function normalizeAssetId(value) {
+  return String(value || "").trim().toUpperCase();
 }
 
 function unitSuffix(unit) {
@@ -186,6 +198,76 @@ function showError(msg) {
   el.style.display = "block";
 }
 
+function renderAddAssetCard(module, assetId) {
+  const list = document.getElementById("list");
+  const pretty = module === "culvert" ? "Culvert" : "Bridge";
+  const title = `${pretty} ${assetId}`;
+  const html = `
+    <div class="card">
+      <div class="title-row">
+        <div class="title">${title}</div>
+      </div>
+      <div class="module">${jobTypeLabel(module)}</div>
+      <div class="meta">Asset not found. Add it now using phone GPS.</div>
+      <div class="row">
+        <input type="number" step="0.000001" placeholder="Lat" id="new-asset-lat">
+        <input type="number" step="0.000001" placeholder="Lon" id="new-asset-lon">
+        <button class="secondary" onclick="useGpsForNewAsset()">Use GPS</button>
+        <button onclick="saveNewAssetFromUI()">Add Asset</button>
+      </div>
+    </div>
+  `;
+  list.innerHTML = html;
+}
+
+function useGpsForNewAsset() {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported on this device.");
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const latEl = document.getElementById("new-asset-lat");
+      const lonEl = document.getElementById("new-asset-lon");
+      if (latEl) latEl.value = pos.coords.latitude.toFixed(6);
+      if (lonEl) lonEl.value = pos.coords.longitude.toFixed(6);
+    },
+    () => alert("Unable to get location. Check permissions.")
+  );
+}
+
+async function saveNewAsset(module, assetId) {
+  const latEl = document.getElementById("new-asset-lat");
+  const lonEl = document.getElementById("new-asset-lon");
+  const lat = latEl ? latEl.value.trim() : "";
+  const lon = lonEl ? lonEl.value.trim() : "";
+  const resp = await apiPost("create_asset", { module, asset_id: assetId, lat, lon });
+  if (!resp.ok) {
+    showError("API error creating asset. Check server connection.");
+    return;
+  }
+  showError("");
+  const searchEl = document.getElementById("search");
+  if (searchEl) searchEl.value = assetId;
+  loadJobs();
+}
+
+async function saveNewAssetFromUI() {
+  const moduleEl = document.getElementById("module");
+  const searchEl = document.getElementById("search");
+  const module = moduleEl ? moduleEl.value : "";
+  const assetId = searchEl ? searchEl.value.trim() : "";
+  if (!isAssetModule(module)) {
+    alert("Select Culverts or Bridges before adding an asset.");
+    return;
+  }
+  if (!assetId) {
+    alert("Enter an asset ID in search first.");
+    return;
+  }
+  return saveNewAsset(module, assetId);
+}
+
 async function loadJobs() {
   const q = document.getElementById("search").value.trim();
   const module = document.getElementById("module").value;
@@ -201,6 +283,10 @@ async function loadJobs() {
   const list = document.getElementById("list");
   list.innerHTML = "";
   if (!data.ok || !data.jobs || data.jobs.length === 0) {
+    if (isAssetModule(module) && q !== "") {
+      renderAddAssetCard(module, q);
+      return;
+    }
     list.innerHTML = "<div class='card'>No jobs found.</div>";
     return;
   }
@@ -209,9 +295,22 @@ async function loadJobs() {
     jobs = jobs.filter(j => Number(j.current_work || 0) === 1);
   }
   if (jobs.length === 0) {
+    if (isAssetModule(module) && q !== "") {
+      renderAddAssetCard(module, q);
+      return;
+    }
     list.innerHTML = "<div class='card'>No jobs found.</div>";
     return;
   }
+    if (isAssetModule(module) && q !== "") {
+      const target = normalizeAssetId(q);
+      const exact = jobs.find(j => normalizeAssetId(j.item) === target);
+      if (!exact) {
+        renderAddAssetCard(module, q);
+        return;
+      }
+      jobs = [exact];
+    }
     jobs.forEach(j => {
       let metaObj = {};
       if (j.meta) {
@@ -238,6 +337,7 @@ async function loadJobs() {
         }
       }
       const showPin = true;
+      const isAsset = isAssetModule((j.module || "").toLowerCase());
       const isCompleted = Number(j.completed || 0) === 1;
       const buttonLabel = isCompleted ? "Mark Not Completed" : "Mark Completed";
       const map = mapLink(j.item || "", j.lat, j.lon);
@@ -245,9 +345,12 @@ async function loadJobs() {
       const latVal = (j.lat !== null && j.lat !== undefined) ? j.lat : "";
       const lonVal = (j.lon !== null && j.lon !== undefined) ? j.lon : "";
       const title = isKm && qtyVal !== "" ? `${j.item || ""} ${qtyVal}${suffix}` : `${j.item || ""}`;
-      const qtyInput = isKm
+      const qtyInput = isAsset
+        ? ""
+        : isKm
         ? `<input type="hidden" value="${qtyVal}" id="qty-${j.job_key}">`
         : `<input type="number" step="0.01" placeholder="Qty" value="${qtyVal}" id="qty-${j.job_key}" ${isDrain ? "disabled" : ""}>`;
+      const completeButton = isAsset ? "" : `<button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>`;
       const html = `
       <div class="card">
         <div class="title-row">
@@ -257,7 +360,7 @@ async function loadJobs() {
         <div class="module">${jobTypeLabel(j.module)}</div>
         <div class="meta">WO: ${j.work_order || "-"} | PO: ${j.po || "-"} ${photos ? `| ${photos}` : ""}</div>
         <div class="row">
-          <button onclick="markCompleted('${j.job_key}', ${isCompleted ? 0 : 1})">${buttonLabel}</button>
+          ${completeButton}
           ${qtyInput}
         </div>
         ${showPin ? `
